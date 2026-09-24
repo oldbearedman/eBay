@@ -1,5 +1,6 @@
 {% extends "base.html" %}
 {% block content %}
+{% if fehler %}<p class="banner error">{{ fehler }}</p>{% endif %}
 <section class="toolbar">
   <div class="stats">
     <div><span class="num">{{ listings|length }}</span><span class="lbl">aktive Angebote</span></div>
@@ -13,7 +14,7 @@
       {% endif %}
     </div>
   </div>
-  <form method="post" action="/abgleichen"><button class="btn">Jetzt abgleichen</button></form>
+  <form method="post" action="/abgleichen"><button class="btn secondary">Jetzt abgleichen</button></form>
 </section>
 
 <form class="filters" method="get">
@@ -25,14 +26,22 @@
   </select>
 </form>
 
+<form id="bundle-form" method="post" action="/buendel">
 <div class="table-wrap">
 <table class="listings">
   <thead>
-    <tr><th></th><th>Artikel</th><th class="r">Preis</th><th class="r">Menge</th><th class="r">Beobachter</th><th class="r">Online seit</th></tr>
+    <tr><th class="check"></th><th></th><th>Artikel</th><th class="r">Preis</th><th class="r">Menge</th><th class="r">Beobachter</th><th class="r">Online seit</th></tr>
   </thead>
   <tbody>
   {% for l in listings %}
     <tr>
+      <td class="check">
+        {% if l.listing_type == "FixedPriceItem" %}
+          <input type="checkbox" name="ids" value="{{ l.item_id }}" data-price="{{ l.price }}" aria-label="Für Bündel auswählen">
+        {% else %}
+          <span class="muted small" title="Auktionen können nicht gebündelt werden">Auktion</span>
+        {% endif %}
+      </td>
       <td class="thumb">{% if l.image_url %}<img src="{{ l.image_url }}" alt="" loading="lazy">{% endif %}</td>
       <td class="title"><a href="{{ l.url }}" target="_blank" rel="noopener">{{ l.title }}</a><span class="muted id">#{{ l.item_id }}{% if l.sku %} · {{ l.sku }}{% endif %}</span></td>
       <td class="r nowrap">{{ "%.2f"|format(l.price)|replace(".", ",") }}&nbsp;€</td>
@@ -41,9 +50,43 @@
       <td class="r nowrap {% if l.days is not none and l.days > 60 %}warn{% endif %}">{% if l.days is not none %}{{ l.days }}&nbsp;Tage{% endif %}</td>
     </tr>
   {% else %}
-    <tr><td colspan="6" class="empty">Keine Angebote gefunden.</td></tr>
+    <tr><td colspan="7" class="empty">Keine Angebote gefunden.</td></tr>
   {% endfor %}
   </tbody>
 </table>
 </div>
+
+<div class="selection-bar" id="selbar" hidden>
+  <span><strong id="selcount">0</strong> ausgewählt · Einzelpreise zusammen <strong id="selsum">0,00 €</strong></span>
+  <span class="actions">
+    <button type="button" class="btn secondary" id="selclear">Auswahl aufheben</button>
+    <button class="btn" id="selgo">Bündel erstellen</button>
+  </span>
+</div>
+</form>
+{% endblock %}
+
+{% block scripts %}
+<script>
+(() => {
+  const boxes = [...document.querySelectorAll('input[name="ids"]')];
+  const bar = document.getElementById('selbar');
+  const go = document.getElementById('selgo');
+  const fmt = v => v.toFixed(2).replace('.', ',') + ' €';
+  function update() {
+    const sel = boxes.filter(b => b.checked);
+    bar.hidden = sel.length === 0;
+    document.getElementById('selcount').textContent = sel.length;
+    document.getElementById('selsum').textContent = fmt(sel.reduce((s, b) => s + parseFloat(b.dataset.price), 0));
+    go.disabled = sel.length < 2;
+    go.textContent = sel.length < 2 ? 'Mind. 2 auswählen' : 'Bündel erstellen';
+    boxes.forEach(b => b.closest('tr').classList.toggle('selected', b.checked));
+  }
+  boxes.forEach(b => b.addEventListener('change', update));
+  document.getElementById('selclear').addEventListener('click', () => { boxes.forEach(b => b.checked = false); update(); });
+  document.getElementById('bundle-form').addEventListener('submit', () => {
+    go.disabled = true; go.textContent = 'Erstelle Entwurf & Collage …';
+  });
+})();
+</script>
 {% endblock %}

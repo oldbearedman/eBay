@@ -1,5 +1,5 @@
 """Gleicht die lokale Datenbank mit den aktiven eBay-Angeboten ab."""
-from . import db, ebay_trading
+from . import bundles, db, ebay_trading
 
 
 def run_sync() -> int:
@@ -27,4 +27,5 @@ def run_sync() -> int:
                 {**it, "synced_at": now},
             )
         con.execute("INSERT INTO sync_log(at, ok, count) VALUES (?, 1, ?)", (now, len(items)))
+    bundles.check_online_bundles({it["item_id"] for it in items})
     return len(items)

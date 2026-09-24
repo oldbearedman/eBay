@@ -1,0 +1,130 @@
+{% extends "base.html" %}
+{% block title %}Bündel #{{ b.id }} · eBay Manager{% endblock %}
+{% set labels = {"entwurf": "Entwurf", "online": "Online", "aufgeloest": "Aufgelöst", "verkauft": "Verkauft", "beendet": "Beendet"} %}
+{% block content %}
+<p><a href="/buendel">← Alle Bündel</a></p>
+{% if info %}<p class="banner ok">{{ info }}</p>{% endif %}
+{% if pruefung %}<p class="banner ok">{{ pruefung }}</p>{% endif %}
+{% if fehler %}<p class="banner error">{{ fehler }}</p>{% endif %}
+
+<div class="bundle-head">
+  <h1>Bündel #{{ b.id }} <span class="status s-{{ b.status }}">{{ labels[b.status] }}</span></h1>
+  {% if b.new_item_id %}
+    <a class="btn secondary" href="https://www.ebay.de/itm/{{ b.new_item_id }}" target="_blank" rel="noopener">Bei eBay ansehen</a>
+  {% endif %}
+</div>
+
+<div class="bundle-grid">
+  <aside>
+    <img class="collage" src="/buendel/{{ b.id }}/collage.jpg" alt="Collage">
+    <h2>Enthaltene Artikel</h2>
+    <ol class="bundle-items">
+      {% for it in b["items"] %}
+      <li>
+        <span class="t">{{ it.title }}</span>
+        <span class="muted small">#{{ it.item_id }}{% if it.sku %} · {{ it.sku }}{% endif %} · {{ it.condition }}</span>
+        <span class="muted small">
+          einzeln {{ "%.2f"|format(it.price)|replace(".", ",") }} €
+          {% if it.action == "beendet" %} · <span class="warn">Einzelangebot beendet</span>{% endif %}
+          {% if it.action == "menge_reduziert" %} · <span class="warn">Menge um 1 reduziert</span>{% endif %}
+          {% if it.relisted_id %} · <span class="ok">wieder online (#{{ it.relisted_id }})</span>{% endif %}
+        </span>
+      </li>
+      {% endfor %}
+    </ol>
+    {% if b.log %}<h2>Verlauf</h2><pre class="log">{{ b.log }}</pre>{% endif %}
+  </aside>
+
+  <form method="post" class="card bundle-form" id="bf">
+    {% set locked = b.status != "entwurf" %}
+    <fieldset {% if locked %}disabled{% endif %}>
+    <label>Titel <span class="muted small" id="tcount"></span>
+      <input name="title" id="title" value="{{ d.title }}" maxlength="80" required>
+    </label>
+
+    <div class="price-row">
+      <label>Einzelpreise zusammen
+        <input value="{{ '%.2f'|format(d.total)|replace('.', ',') }} €" disabled>
+      </label>
+      <label>Rabatt %
+        <input name="discount" id="discount" type="number" min="0" max="90" step="1" value="{{ d.discount|int }}">
+      </label>
+      <label>Bündelpreis €
+        <input name="price" id="price" value="{{ '%.2f'|format(d.price) }}" inputmode="decimal" required>
+      </label>
+    </div>
+
+    <div class="two">
+      <label>Kategorie
+        <select name="category_id">
+          {% for cid, cname in d.categories %}<option value="{{ cid }}" {% if cid == d.category_id %}selected{% endif %}>{{ cname }}</option>{% endfor %}
+        </select>
+      </label>
+      <label>Zustand <span class="muted small">(schlechtester ist vorausgewählt)</span>
+        <select name="condition_id">
+          {% for cid, cname in d.conditions %}<option value="{{ cid }}" {% if cid == d.condition_id %}selected{% endif %}>{{ cname }}</option>{% endfor %}
+        </select>
+      </label>
+    </div>
+
+    <label>Versandprofil <span class="muted small">– passt das Paketmaß für alle Artikel zusammen?</span>
+      <select name="shipping_profile">
+        {% for p in profiles %}<option value="{{ p.id }}" {% if p.id == d.shipping_profile %}selected{% endif %}>{{ p.name }}{% if p.description %} – {{ p.description }}{% endif %}</option>{% endfor %}
+      </select>
+    </label>
+
+    <label class="inline"><input type="checkbox" name="include_originals" {% if d.get("include_originals", True) %}checked{% endif %}>
+      Nach der Collage auch alle Originalfotos anhängen ({{ d.extra_pictures|length }} Stück, max. 23)</label>
+
+    <label>Artikelmerkmale <span class="muted small">– eine Zeile pro Merkmal, mehrere Werte mit „|“ trennen</span>
+      <textarea name="specifics" rows="8">{{ specifics_text }}</textarea>
+    </label>
+
+    <label>Beschreibung (HTML)
+      <textarea name="description" id="desc" rows="10">{{ d.description }}</textarea>
+    </label>
+    <details><summary>Vorschau der Beschreibung</summary><div class="desc-preview" id="descprev"></div></details>
+    </fieldset>
+
+    <div class="actions">
+      {% if b.status == "entwurf" %}
+        <button class="btn secondary" name="aktion" value="speichern">Speichern</button>
+        <button class="btn secondary" name="aktion" value="pruefen">Bei eBay prüfen</button>
+        <button class="btn" name="aktion" value="einstellen" data-confirm="Bündel jetzt bei eBay einstellen? Danach werden die {{ b['items']|length }} Einzelangebote beendet (bzw. ihre Menge um 1 reduziert).">Einstellen</button>
+        <button class="btn danger" name="aktion" value="loeschen" data-confirm="Entwurf löschen?" formnovalidate>Entwurf löschen</button>
+      {% elif b.status == "online" %}
+        <button class="btn danger" name="aktion" value="aufloesen" data-confirm="Bündel beenden und alle Einzelartikel wieder einstellen?">Bündel auflösen</button>
+      {% endif %}
+    </div>
+  </form>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+(() => {
+  const title = document.getElementById('title'), tc = document.getElementById('tcount');
+  const upd = () => tc.textContent = `${title.value.length}/80`;
+  title.addEventListener('input', upd); upd();
+
+  const total = {{ d.total }}, disc = document.getElementById('discount'), price = document.getElementById('price');
+  disc.addEventListener('input', () => {
+    const v = total * (1 - (parseFloat(disc.value) || 0) / 100);
+    price.value = Math.max(0.99, Math.floor((v + 0.01) * 2) / 2 - 0.01).toFixed(2);
+  });
+
+  const desc = document.getElementById('desc'), prev = document.getElementById('descprev');
+  const render = () => prev.innerHTML = desc.value;
+  desc.addEventListener('input', render); render();
+
+  let clicked = null;
+  document.querySelectorAll('#bf button[name="aktion"]').forEach(b => b.addEventListener('click', () => clicked = b));
+  document.getElementById('bf').addEventListener('submit', e => {
+    if (clicked?.dataset.confirm && !confirm(clicked.dataset.confirm)) { e.preventDefault(); return; }
+    // Buttons erst nach dem Absenden sperren, damit ihr Wert mitgeschickt wird
+    setTimeout(() => document.querySelectorAll('#bf button').forEach(b => b.disabled = true), 0);
+    if (clicked) clicked.textContent = 'Bitte warten …';
+  });
+})();
+</script>
+{% endblock %}

@@ -1,0 +1,27 @@
+{% extends "base.html" %}
+{% block title %}Bündel · eBay Manager{% endblock %}
+{% set labels = {"entwurf": "Entwurf", "online": "Online", "aufgeloest": "Aufgelöst", "verkauft": "Verkauft", "beendet": "Beendet"} %}
+{% block content %}
+{% if info %}<p class="banner ok">{{ info }}</p>{% endif %}
+{% if fehler %}<p class="banner error">{{ fehler }}</p>{% endif %}
+<h1>Bündel</h1>
+{% if not bundles %}
+  <div class="card empty-state">
+    <p>Noch keine Bündel.</p>
+    <p class="muted">Wähle in der <a href="/">Angebotsübersicht</a> mindestens zwei Artikel aus und klicke auf „Bündel erstellen“.</p>
+  </div>
+{% else %}
+<div class="bundle-cards">
+  {% for b in bundles %}
+  <a class="card bundle-card" href="/buendel/{{ b.id }}">
+    <img src="/buendel/{{ b.id }}/collage.jpg" alt="" loading="lazy">
+    <div>
+      <span class="status s-{{ b.status }}">{{ labels[b.status] }}</span>
+      <p class="t">{{ b.draft.title }}</p>
+      <p class="muted small">{{ b["items"]|length }} Artikel · {{ "%.2f"|format(b.draft.price)|replace(".", ",") }} € statt {{ "%.2f"|format(b.draft.total)|replace(".", ",") }} € · {{ b.created_at[:10] }}</p>
+    </div>
+  </a>
+  {% endfor %}
+</div>
+{% endif %}
+{% endblock %}
