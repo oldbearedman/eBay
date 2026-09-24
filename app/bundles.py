@@ -96,9 +96,12 @@ def _merge_specifics(details: list[dict], category_id: str) -> tuple[dict[str, l
     notes = []
     for name in list(merged):
         values = merged[name]
-        rule = rules.get(name, {"multi": False, "required": False})
+        rule = rules.get(name, {"multi": False, "required": False, "free_text": True})
         if len(values) > 1 and not rule["multi"]:
-            if rule["required"]:
+            joined = " + ".join(values)
+            if rule["required"] and rule.get("free_text") and len(joined) <= 65:
+                merged[name] = [joined]
+            elif rule["required"]:
                 merged[name] = values[:1]
                 notes.append(f"„{name}“ erlaubt nur einen Wert – Pflichtfeld, daher „{values[0]}“ übernommen.")
             else:

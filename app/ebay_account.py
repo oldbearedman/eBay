@@ -32,6 +32,7 @@ def category_aspects(category_id: str) -> dict[str, dict]:
             a["localizedAspectName"]: {
                 "multi": a.get("aspectConstraint", {}).get("itemToAspectCardinality") == "MULTI",
                 "required": bool(a.get("aspectConstraint", {}).get("aspectRequired")),
+                "free_text": a.get("aspectConstraint", {}).get("aspectMode") == "FREE_TEXT",
             }
             for a in r.json().get("aspects", [])
         }
