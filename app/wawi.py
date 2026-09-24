@@ -343,7 +343,7 @@ def for_items(item_ids: list[str]) -> dict[str, dict]:
 
 
 def bundle_margin(item_ids: list[str], price: float, shipping_cost: float | None = None,
-                  charged: float = 0.0) -> dict:
+                  charged: float = 0.0, profile_cost: float | None = None) -> dict:
     """Marge eines Bündels: EK-Summe, ein Porto statt vieler, Gebühren, Steuer, Mindestpreis."""
     data = for_items(item_ids)
     missing = [i for i in item_ids if i not in data]
@@ -353,7 +353,8 @@ def bundle_margin(item_ids: list[str], price: float, shipping_cost: float | None
     ek = sum(p["ek"] for p in items)
     rate = max(p["fee_rate"] for p in items)
     single_shipping = sum(p["versand_kosten"] for p in items)
-    ship = shipping_cost if shipping_cost is not None else bundle_shipping(items)
+    # Porto: vom Nutzer gesetzt – sonst das Höhere aus Versandprofil-Kosten und Staffel nach Stückzahl
+    ship = shipping_cost if shipping_cost is not None else max(profile_cost or 0.0, bundle_shipping(items))
     target = settings.get("min_profit_per_item") * len(item_ids)
     max_loss = settings.get("max_loss_per_bundle")
     slow = slow_items(item_ids)

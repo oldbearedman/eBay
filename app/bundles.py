@@ -5,7 +5,7 @@ import logging
 import math
 import re
 
-from . import ai, collage, config, db, ebay_account, ebay_trading, wawi
+from . import ai, collage, config, db, ebay_account, ebay_trading, settings, wawi
 
 log = logging.getLogger("ebay-manager")
 
@@ -164,6 +164,15 @@ def create_draft(item_ids: list[str], price: float | None = None, hint: str | No
             age = sorted((p for p in profs if p["age_check"]), key=lambda p: p["buyer_cost"])
             if age:
                 ship_id, cur = age[0]["id"], age[0]
+        # Ab 3 Artikeln reicht ein Brief-Profil nicht: Profil wählen, dessen Versandart mind. die Porto-Staffel kostet
+        n = len(details)
+        tier = settings.get("porto_5plus") if n >= 5 else settings.get("porto_3_4") if n >= 3 else 0.0
+        if tier and cur and (cur.get("own_cost") or 0) < tier:
+            fits = sorted((p for p in profs if (p.get("own_cost") or 0) >= tier and p["age_check"] == bool(usk18)
+                           and (p.get("handling_days") or 0) <= 3),
+                          key=lambda p: (p["own_cost"], p["buyer_cost"]))
+            if fits:
+                ship_id, cur = fits[0]["id"], fits[0]
         buyer_cost = cur["buyer_cost"] if cur else 0.0
     except Exception:
         buyer_cost = 0.0
@@ -332,9 +341,8 @@ def publish(bundle_id: int) -> dict:
     if b["draft"].get("usk18") and prof is not None and not prof["age_check"] and not b["draft"].get("allow_below_min"):
         raise ValueError("Das Paket enthält ein USK-18-Spiel – bitte ein Versandprofil mit Altersprüfung "
                          "(z. B. „Alter“ KP) wählen oder „Trotzdem einstellen“ anhaken.")
-    m = wawi.bundle_margin([it["item_id"] for it in b["items"]], b["draft"]["price"],
-                           b["draft"].get("porto") or (prof or {}).get("own_cost"),
-                           charged=(prof or {}).get("buyer_cost", 0.0))
+    m = wawi.bundle_margin([it["item_id"] for it in b["items"]], b["draft"]["price"], b["draft"].get("porto"),
+                           charged=(prof or {}).get("buyer_cost", 0.0), profile_cost=(prof or {}).get("own_cost"))
     if m.get("complete") and not m["allowed"] and not b["draft"].get("allow_below_min"):
         if m.get("mixed_tax"):
             raise ValueError("Das Paket mischt differenz- und regelbesteuerte Artikel. "

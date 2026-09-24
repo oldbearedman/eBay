@@ -170,8 +170,8 @@ def bundle_edit(request: Request, bundle_id: int, info: str = "", fehler: str = 
         returns = [{"id": b["draft"]["return_profile"], "name": "Rücknahme des ersten Artikels", "info": ""}]
         payments = [{"id": b["draft"]["payment_profile"], "name": "Zahlung des ersten Artikels", "info": ""}]
     prof = next((p for p in profiles if p["id"] == b["draft"]["shipping_profile"]), None) or {}
-    margin = wawi.bundle_margin([it["item_id"] for it in b["items"]], b["draft"]["price"],
-                                b["draft"].get("porto") or prof.get("own_cost"), charged=prof.get("buyer_cost", 0.0))
+    margin = wawi.bundle_margin([it["item_id"] for it in b["items"]], b["draft"]["price"], b["draft"].get("porto"),
+                                charged=prof.get("buyer_cost", 0.0), profile_cost=prof.get("own_cost"))
     return templates.TemplateResponse(request, "bundle_edit.html", {
         "b": b, "d": b["draft"], "profiles": profiles, "margin": margin, "returns": returns, "payments": payments,
         "prof": prof,
