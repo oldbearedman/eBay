@@ -323,12 +323,13 @@ def describe(row: dict, category_id: str | None = None) -> dict:
     proven = out["sold_avg"] and row["own_price"] <= out["sold_avg"] * 1.1
     if proven:
         out.update(verdict="ok", label=f"bewährt – schon {len(sold_prices)}× für Ø {out['sold_avg']:.2f} € verkauft".replace(".", ","))
-    elif diff > 25 and out["rough"]:
+    elif diff > 20 and out["rough"]:
         out.update(verdict="unsicher", label=f"{diff:+.0f} % – unsicherer Vergleich, bitte prüfen")
-    elif diff > 25:
+    elif diff > 20:
         out.update(verdict="teuer", label=f"{diff:+.0f} % über Markt")
-    elif diff < -20:
-        out.update(verdict="guenstig", label=f"{diff:+.0f} % unter Markt – evtl. Luft nach oben")
+    elif row["own_price"] < quick * 0.85:
+        # Aktive Angebote sind die unverkauften – „zu günstig“ erst unter dem günstigen Drittel
+        out.update(verdict="guenstig", label=f"{diff:+.0f} % – sogar unter dem günstigen Drittel, evtl. Luft nach oben")
     else:
         out.update(verdict="ok", label=f"marktgerecht ({diff:+.0f} %)")
     return out
