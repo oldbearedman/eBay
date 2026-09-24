@@ -1,0 +1,108 @@
+{% extends "base.html" %}
+{% block title %}Kombi-Rabatt · eBay Manager{% endblock %}
+{% block content %}
+{% if info %}<p class="banner ok">{{ info }}</p>{% endif %}
+{% if fehler %}<p class="banner error">{{ fehler }}</p>{% endif %}
+<h1>Kombi-Rabatt</h1>
+<p class="muted">„Kaufe 2, spare 15 %“ über mehrere deiner Angebote. Anders als beim Bündel bleiben die Einzelangebote
+  mit Ranking und Beobachtern online – der Käufer stellt sich sein Paket selbst zusammen. eBay erlaubt je Aktion eine Rabattstufe.</p>
+
+<form class="card promo-form" method="get" action="/rabatte">
+  <h2>Neue Aktion – Artikel auswählen</h2>
+  <div class="promo-grid">
+    <label>Titel enthält <span class="muted small">(z. B. PS2, Xbox 360, Assassin – leer = alle)</span>
+      <input name="q" value="{{ q }}" placeholder="PS2"></label>
+    <label>Nur
+      <select name="nur">
+        <option value="" {% if not nur %}selected{% endif %}>alle Festpreis-Angebote</option>
+        <option value="ladenhueter" {% if nur == "ladenhueter" %}selected{% endif %}>Ladenhüter</option>
+        <option value="unsichtbar" {% if nur == "unsichtbar" %}selected{% endif %}>👻 kaum gesehen</option>
+        <option value="kauf" {% if nur == "kauf" %}selected{% endif %}>🤔 viele Aufrufe, kein Kauf</option>
+      </select></label>
+    <label>ab … Artikeln<input name="qty" type="number" min="2" max="10" value="{{ qty }}"></label>
+    <label>Rabatt %<input name="pct" type="number" min="5" max="80" value="{{ pct|int }}"></label>
+  </div>
+  <button class="btn secondary">Vorschau mit Margenprüfung</button>
+</form>
+
+{% if preview is not none %}
+<form class="card" method="post" action="/rabatte" id="promoform">
+  <div class="bundle-head">
+    <h2>{{ preview|length }} Artikel · ab {{ qty }} Stück {{ pct|int }} % Rabatt</h2>
+    <span class="muted small">🟢 gut · 🟡 knapp · 🟠 Abverkauf · 🔴 zu viel Minus (vorab abgewählt) · ⚪ keine WaWi-Daten</span>
+  </div>
+  <table class="listings">
+    <thead><tr><th class="check"><input type="checkbox" id="all" checked aria-label="Alle"></th><th></th><th>Artikel</th>
+      <th class="r">Preis</th><th class="r">mit Rabatt</th><th class="r">Gewinn</th></tr></thead>
+    <tbody>
+    {% for it in preview %}
+      <tr>
+        <td class="check"><input type="checkbox" name="ids" value="{{ it.item_id }}" {% if it.m.level not in ("blockiert",) %}checked{% endif %}></td>
+        <td class="thumb">{% if it.image_url %}<img src="{{ it.image_url }}" alt="" loading="lazy">{% endif %}</td>
+        <td class="title">{{ it.title }}</td>
+        <td class="r nowrap">{{ "%.2f"|format(it.price)|replace(".", ",") }} €</td>
+        <td class="r nowrap">{{ "%.2f"|format(it.price * (1 - pct / 100))|replace(".", ",") }} €</td>
+        <td class="r nowrap lvl-{{ it.m.level }}">{{ {"gut": "🟢", "knapp": "🟡", "abverkauf": "🟠", "blockiert": "🔴", "unbekannt": "⚪"}[it.m.level] }}
+          {% if it.m.profit is defined %}{{ "%.2f"|format(it.m.profit)|replace(".", ",") }} €{% endif %}</td>
+      </tr>
+    {% else %}
+      <tr><td colspan="6" class="empty">Keine passenden Angebote.</td></tr>
+    {% endfor %}
+    </tbody>
+  </table>
+  {% if preview %}
+  <div class="promo-grid" style="margin-top:16px">
+    <label>Name der Aktion<input name="name" value="{{ pct|int }} % Rabatt ab {{ qty }} Artikeln{% if q %} – {{ q }}{% endif %}" maxlength="90" required></label>
+    <label>Kurztext für Käufer <span class="muted small">(max. 50 Zeichen)</span>
+      <input name="description" value="Kombiniere {{ qty }} Artikel und spare {{ pct|int }} %" maxlength="50" required></label>
+    <label>Laufzeit (Tage)<input name="days" type="number" min="1" max="45" value="14"></label>
+  </div>
+  <input type="hidden" name="qty" value="{{ qty }}"><input type="hidden" name="pct" value="{{ pct }}">
+  <div class="actions" style="display:flex;gap:8px;flex-wrap:wrap">
+    <button class="btn" name="modus" value="start">Aktion starten</button>
+    <button class="btn secondary" name="modus" value="entwurf">Nur als Entwurf anlegen</button>
+  </div>
+  <p class="muted small">Gewinn = Artikelpreis nach Rabatt − EK − Gebühr − Steuer − halbes Porto (bei 2+ Artikeln fällt das Porto nur einmal an).</p>
+  {% endif %}
+</form>
+{% endif %}
+
+<h2 class="section">Deine Aktionen</h2>
+<div class="table-wrap">
+<table class="listings">
+  <thead><tr><th>Aktion</th><th>Art</th><th>Status</th><th>Zeitraum</th><th></th></tr></thead>
+  <tbody>
+  {% for p in promos %}
+    <tr>
+      <td class="title">{{ p.name }}</td>
+      <td class="small">{{ p.type_label }}</td>
+      <td><span class="status s-{{ {'RUNNING': 'online', 'ENDED': 'beendet', 'PAUSED': 'aufgeloest'}.get(p.status, 'entwurf') }}">{{ p.status_label }}</span></td>
+      <td class="small nowrap">{{ p.start }} – {{ p.end }}</td>
+      <td class="nowrap">
+        <form method="post" action="/rabatte/aktion" class="inline-form">
+          <input type="hidden" name="id" value="{{ p.id }}">
+          {% if p.status == "RUNNING" %}<button class="icon-btn" name="was" value="pause">Pausieren</button>{% endif %}
+          {% if p.status == "PAUSED" %}<button class="icon-btn" name="was" value="resume">Fortsetzen</button>{% endif %}
+          {% if p.status in ("DRAFT", "SCHEDULED") %}<button class="icon-btn" name="was" value="delete" onclick="return confirm('Aktion löschen?')">Löschen</button>{% endif %}
+        </form>
+      </td>
+    </tr>
+  {% else %}
+    <tr><td colspan="5" class="empty">Keine Aktionen.</td></tr>
+  {% endfor %}
+  </tbody>
+</table>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+const all = document.getElementById('all');
+if (all) all.addEventListener('change', () => document.querySelectorAll('input[name="ids"]').forEach(b => b.checked = all.checked));
+const pf = document.getElementById('promoform');
+if (pf) pf.addEventListener('submit', e => {
+  const n = pf.querySelectorAll('input[name="ids"]:checked').length;
+  if (e.submitter?.value === 'start' && !confirm(`Kombi-Rabatt für ${n} Artikel jetzt bei eBay starten?`)) e.preventDefault();
+});
+</script>
+{% endblock %}

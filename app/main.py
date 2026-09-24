@@ -11,7 +11,7 @@ from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, Redirect
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 
-from . import advisor, ai, bundles, config, db, ebay_account, ebay_auth, ebay_trading, market, settings, sync, traffic, wawi
+from . import advisor, ai, bundles, config, db, ebay_account, ebay_auth, ebay_trading, market, promotions, settings, sync, traffic, wawi
 
 log = logging.getLogger("ebay-manager")
 templates = Jinja2Templates(directory=config.BASE_DIR / "app" / "templates")
@@ -403,3 +403,61 @@ async def links_claude():
 async def links_sku():
     r = await asyncio.to_thread(wawi.write_skus)
     return _back("/zuordnung", info=f"SKU bei {r['done']} Angeboten eingetragen.", fehler=" · ".join(r["errors"][:5]))
+
+
+# ── Kombi-Rabatt ────────────────────────────────────────────────────────
+
+@app.get("/rabatte", response_class=HTMLResponse)
+def promo_page(request: Request, q: str = "", nur: str = "", qty: int = 2, pct: float = 15,
+               info: str = "", fehler: str = ""):
+    try:
+        promos = promotions.list_all()
+    except Exception as exc:
+        promos, fehler = [], fehler or str(exc)
+    preview = None
+    if "q" in request.query_params:
+        with db.connect() as con:
+            rows = [dict(r) for r in con.execute(
+                "SELECT * FROM listings WHERE active = 1 AND listing_type = 'FixedPriceItem' AND title LIKE ? ORDER BY title",
+                (f"%{q}%",))]
+        if nur == "ladenhueter":
+            slow = set(wawi.slow_items([r["item_id"] for r in rows]))
+            rows = [r for r in rows if r["item_id"] in slow]
+        elif nur in ("unsichtbar", "kauf"):
+            dg = traffic.diagnose_all()
+            rows = [r for r in rows if dg.get(r["item_id"], {}).get("key") == nur]
+        margins = promotions.margin_check([r["item_id"] for r in rows], pct) if rows else {}
+        preview = [{**r, "m": margins.get(r["item_id"], {"level": "unbekannt"})} for r in rows]
+    return templates.TemplateResponse(request, "promotions.html", {
+        "promos": promos, "preview": preview, "q": q, "nur": nur, "qty": qty, "pct": pct,
+        "info": info, "fehler": fehler,
+    })
+
+
+@app.post("/rabatte")
+async def promo_create(request: Request):
+    form = await request.form()
+    ids = form.getlist("ids")
+    if len(ids) < 2:
+        return _back("/rabatte", fehler="Bitte mindestens zwei Artikel auswählen.")
+    with db.connect() as con:
+        img = con.execute("SELECT image_url FROM listings WHERE item_id = ?", (ids[0],)).fetchone()["image_url"]
+    draft = form.get("modus") == "entwurf"
+    try:
+        await asyncio.to_thread(
+            promotions.create_order_discount, form["name"], form["description"], ids,
+            int(form["qty"]), float(form["pct"]), int(form["days"]), img, draft)
+    except Exception as exc:
+        return _back("/rabatte", fehler=str(exc))
+    return _back("/rabatte", info=(f"Entwurf mit {len(ids)} Artikeln angelegt." if draft
+                                   else f"Kombi-Rabatt für {len(ids)} Artikel gestartet (aktiv in ca. 5 Minuten)."))
+
+
+@app.post("/rabatte/aktion")
+async def promo_action(id: str = Form(...), was: str = Form(...)):
+    fn = {"pause": promotions.pause, "resume": promotions.resume, "delete": promotions.delete}[was]
+    try:
+        await asyncio.to_thread(fn, id)
+    except Exception as exc:
+        return _back("/rabatte", fehler=str(exc))
+    return _back("/rabatte", info={"pause": "Aktion pausiert.", "resume": "Aktion läuft wieder.", "delete": "Aktion gelöscht."}[was])

@@ -189,3 +189,11 @@ h2.section { font-size: 17px; margin: 28px 0 12px; }
 .chip.active { background: var(--accent); border-color: var(--accent); color: var(--accent-text); }
 .chip b { font-weight: 700; margin-left: 2px; }
 .diag-box { display: flex; flex-direction: column; gap: 4px; margin-bottom: 16px; }
+
+/* ── Kombi-Rabatt ──────────────────────────────────────────────── */
+.promo-form { margin-bottom: 16px; }
+.promo-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 12px; margin: 12px 0; }
+.promo-grid label { font-weight: 600; font-size: 14px; }
+.promo-grid input, .promo-grid select { display: block; width: 100%; margin-top: 4px; font-weight: 400; }
+.inline-form { display: inline-flex; gap: 4px; }
+.top nav { display: flex; flex-wrap: wrap; gap: 4px 0; }
