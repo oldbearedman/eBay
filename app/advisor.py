@@ -56,10 +56,18 @@ HARTE REGELN:
   Beobachter, kurz online, Diagnose ok) – außer bewusst als Zugpferd.
 
 PREIS – nicht verschenken, aber verkaufbar:
+- Der Preis richtet sich nach dem WERT der Artikel, nicht nach dem Einkaufspreis. Der Mindestgewinn
+  ({ZIEL} € je Artikel) ist nur ein SICHERHEITSNETZ nach unten – niemals ein Ziel. Viele Artikel wurden sehr
+  günstig eingekauft (unter 1 €) und sind 10–20 € wert: die sollen auch für ihren Wert verkauft werden.
+  Eine lange Standzeit allein ist KEIN Grund, auf das Minimum zu gehen.
 - „marktpreis“ = Median vergleichbarer Konkurrenzangebote inkl. Versand (gleiche Vollständigkeit, ähnlicher Zustand),
   „schnell“ = Preis im günstigen Drittel. „selbst_verkauft“ = echte eigene Verkaufspreise (wiegen am meisten).
-- Paketpreis (inkl. Versand, der Händler versendet meist kostenlos) üblicherweise bei 80–95 % der Summe der
-  Marktpreise der Teile. Unter 75 % nur beim Abverkauf echter Ladenhüter. Preise auf ,49 oder ,99.
+- Anker = der NIEDRIGERE Wert aus (Summe der eigenen Einzelpreise inkl. Versand) und (Summe der Marktpreise).
+  Paketpreis üblicherweise 85–95 % dieses Ankers. Das Paket muss für den Käufer günstiger sein als die
+  Einzelangebote zusammen – sonst ergibt es keinen Sinn. Preise auf ,49 oder ,99.
+- Liegen die eigenen Einzelpreise deutlich UNTER dem Markt, ist Bündeln nicht die Lösung: dann lieber
+  als einzel_tipp „Preis anheben“ vorschlagen (mit konkretem Preis) statt ein Paket über den Einzelpreisen.
+- Unter 75 % des Ankers nur beim Abverkauf echter Ladenhüter.
 - Ein Paket braucht nur EIN Porto – dieser Vorteil erlaubt einen attraktiven Preis bei gutem Gewinn.
 - Gewinn-Ampel (Ergebnis nach EK, Gebühren, Porto, Differenzsteuer):
   🟢 gut: mindestens {ZIEL} € Gewinn je Artikel – der Normalfall, der Händler will vorankommen.
@@ -86,7 +94,8 @@ TOOL = {
     "description": (
         "Prüft Paketentwürfe gegen die echten Zahlen des Händlers: Gewinn nach EK/Gebühren/Porto/Steuer "
         "(Ampel gut/knapp/abverkauf/blockiert), Zielpreis und unterste Preisgrenze, Summe der Marktpreise und "
-        "Anteil des Paketpreises daran, Plattformen, Dubletten, gemischte Vollständigkeit, Ladenhüter-Anteil. "
+        "Anteil des Paketpreises daran, Vergleich mit den Einzelpreisen, Plattformen, Dubletten, "
+        "gemischte Vollständigkeit, Ladenhüter-Anteil, Warnung bei verschenkten Preisen. "
         "Mehrere Pakete pro Aufruf möglich."),
     "strict": True,
     "input_schema": {
@@ -234,8 +243,14 @@ def check_bundle(item_ids: list[str], price: float, inv_by_id: dict, metas: dict
     names = [(m.get("name") or "").lower() for m in mts if m.get("name")]
     complete = {m.get("complete") for m in mts if m.get("complete")}
     market_sum = sum(inv_by_id[i]["marktpreis"] or inv_by_id[i]["eigen_inkl_vers"] or inv_by_id[i]["preis"] for i in ids)
+    own_sum = sum(inv_by_id[i]["eigen_inkl_vers"] or inv_by_id[i]["preis"] for i in ids)
+    anchor = min(market_sum, own_sum)
     mg = wawi.bundle_margin(ids, price)
     problems = []
+    if price > own_sum:
+        problems.append(f"teurer als die Einzelangebote zusammen ({own_sum:.2f} € inkl. Versand) – kein Vorteil für den Käufer")
+    if mg.get("complete") and price < mg["min_price"] * 1.15 and market_sum > price * 1.4:
+        problems.append(f"verschenkt: Preis nah am Minimum ({mg['min_price']:.2f} €), obwohl der Marktwert bei {market_sum:.2f} € liegt")
     if not meta.platforms_ok(platforms):
         problems.append(f"gemischte Plattformen: {sorted(platforms)}")
     if len(names) != len(set(names)):
@@ -243,12 +258,15 @@ def check_bundle(item_ids: list[str], price: float, inv_by_id: dict, metas: dict
     if {"cib", "teil"} <= complete:
         problems.append("Vollständigkeit gemischt (cib + teil)")
     share = round(price / market_sum * 100) if market_sum else None
-    if share is not None and share < 75:
-        problems.append(f"nur {share} % der Marktpreis-Summe – zu stark unter Marktwert")
+    anchor_share = round(price / anchor * 100) if anchor else None
+    if anchor_share is not None and anchor_share < 75:
+        problems.append(f"nur {anchor_share} % des Ankers ({anchor:.2f} €) – zu stark unter Wert")
     out = {
         "item_ids": ids, "preis": price, "plattformen": sorted(platforms),
         "summe_marktpreise": round(market_sum, 2), "anteil_marktwert_prozent": share,
         "summe_einzelpreise": round(sum(inv_by_id[i]["preis"] for i in ids), 2),
+        "summe_einzelpreise_inkl_versand": round(own_sum, 2), "anker": round(anchor, 2),
+        "anteil_anker_prozent": anchor_share,
         "ladenhueter": sum(1 for i in ids if inv_by_id[i]["ladenhueter"] == "ja"),
         "probleme": problems,
     }
