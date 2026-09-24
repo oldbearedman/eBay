@@ -1,0 +1,49 @@
+{% extends "base.html" %}
+{% block content %}
+<section class="toolbar">
+  <div class="stats">
+    <div><span class="num">{{ listings|length }}</span><span class="lbl">aktive Angebote</span></div>
+    <div><span class="num">{{ "%.2f"|format(total)|replace(".", ",") }}&nbsp;€</span><span class="lbl">Gesamtwert</span></div>
+    <div>
+      {% if last %}
+        <span class="num small">{{ last.at[:16]|replace("T", " ") }} UTC</span>
+        <span class="lbl">{% if last.ok %}letzter Abgleich{% else %}<span class="error">Abgleich fehlgeschlagen: {{ last.message }}</span>{% endif %}</span>
+      {% else %}
+        <span class="num small">–</span><span class="lbl">noch kein Abgleich</span>
+      {% endif %}
+    </div>
+  </div>
+  <form method="post" action="/abgleichen"><button class="btn">Jetzt abgleichen</button></form>
+</section>
+
+<form class="filters" method="get">
+  <input type="search" name="q" value="{{ q }}" placeholder="Titel durchsuchen …">
+  <select name="sort" onchange="this.form.submit()">
+    {% for key, label in [("alter","Am längsten online"),("neu","Neueste zuerst"),("beobachter","Meiste Beobachter"),("preis_ab","Preis absteigend"),("preis_auf","Preis aufsteigend"),("titel","Titel A–Z")] %}
+      <option value="{{ key }}" {% if sort == key %}selected{% endif %}>{{ label }}</option>
+    {% endfor %}
+  </select>
+</form>
+
+<div class="table-wrap">
+<table class="listings">
+  <thead>
+    <tr><th></th><th>Artikel</th><th class="r">Preis</th><th class="r">Menge</th><th class="r">Beobachter</th><th class="r">Online seit</th></tr>
+  </thead>
+  <tbody>
+  {% for l in listings %}
+    <tr>
+      <td class="thumb">{% if l.image_url %}<img src="{{ l.image_url }}" alt="" loading="lazy">{% endif %}</td>
+      <td class="title"><a href="{{ l.url }}" target="_blank" rel="noopener">{{ l.title }}</a><span class="muted id">#{{ l.item_id }}{% if l.sku %} · {{ l.sku }}{% endif %}</span></td>
+      <td class="r nowrap">{{ "%.2f"|format(l.price)|replace(".", ",") }}&nbsp;€</td>
+      <td class="r">{{ l.quantity }}</td>
+      <td class="r">{% if l.watch_count %}<span class="pill">{{ l.watch_count }}</span>{% else %}<span class="muted">0</span>{% endif %}</td>
+      <td class="r nowrap {% if l.days is not none and l.days > 60 %}warn{% endif %}">{% if l.days is not none %}{{ l.days }}&nbsp;Tage{% endif %}</td>
+    </tr>
+  {% else %}
+    <tr><td colspan="6" class="empty">Keine Angebote gefunden.</td></tr>
+  {% endfor %}
+  </tbody>
+</table>
+</div>
+{% endblock %}

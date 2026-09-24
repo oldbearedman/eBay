@@ -1,0 +1,29 @@
+{% extends "base.html" %}
+{% block title %}eBay-Zugang · eBay Manager{% endblock %}
+{% block content %}
+<section class="card narrow">
+  <h1>eBay-Zugang</h1>
+  {% if authorized %}
+    <p class="ok">Verbunden. Der Zugang ist gültig bis <strong>{{ expires }}</strong>.</p>
+    <p class="muted">Du kannst dich jederzeit neu verbinden – z.&nbsp;B. kurz vor Ablauf.</p>
+  {% else %}
+    <p>Einmalig nötig, damit das Tool deine Angebote lesen und bearbeiten darf.</p>
+  {% endif %}
+  {% if fehler %}<p class="error">{{ fehler }}</p>{% endif %}
+
+  <ol class="steps">
+    <li>
+      <p><strong>Bei eBay anmelden und zustimmen</strong></p>
+      <a class="btn" href="{{ consent_url }}" target="_blank" rel="noopener">eBay-Anmeldung öffnen</a>
+    </li>
+    <li>
+      <p><strong>Adresse der Erfolgsseite hierher kopieren</strong><br>
+      <span class="muted">Nach der Zustimmung landest du auf einer eBay-Seite. Kopiere die komplette Adresse aus der Adresszeile (sie enthält <code>code=</code>).</span></p>
+      <form method="post" action="/anmelden" class="row">
+        <input name="adresse" placeholder="https://auth2.ebay.com/oauth2/ThirdPartyAuthSucessFailure?…code=…" required autocomplete="off">
+        <button class="btn">Verbinden</button>
+      </form>
+    </li>
+  </ol>
+</section>
+{% endblock %}

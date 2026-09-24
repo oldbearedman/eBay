@@ -1,0 +1,13 @@
+[Unit]
+Description=eBay Manager
+After=network-online.target
+
+[Service]
+WorkingDirectory=%h/ebay-manager
+ExecStart=%h/ebay-manager/.venv/bin/python run.py
+Restart=on-failure
+RestartSec=10
+Environment=PYTHONUNBUFFERED=1
+
+[Install]
+WantedBy=default.target

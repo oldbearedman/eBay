@@ -1,0 +1,15 @@
+# Zugangsdaten – niemals committen
+.env
+*.token
+tokens.json
+
+# Laufzeitdaten
+data/
+*.sqlite
+*.db
+
+# Python
+__pycache__/
+*.pyc
+.venv/
+venv/
