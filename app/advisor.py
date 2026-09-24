@@ -6,7 +6,7 @@ from datetime import datetime, timezone
 
 import anthropic
 
-from . import ai, db, ebay_orders, market, settings, wawi
+from . import ai, db, ebay_orders, market, settings, traffic, wawi
 
 log = logging.getLogger("ebay-manager")
 
@@ -35,6 +35,10 @@ Analysiere gründlich und schlage Bündel (Pakete aus 2–6 Angeboten) vor, z. B
 - Spielreihen / Franchise (z. B. Teil 1–3 einer Reihe) – besonders stark, wenn vollständig
 - gleiche Plattform + gleiches Genre („PS3 Shooter-Paket“), Einsteiger-/Sammler-Pakete
 - ein gefragter Artikel (viele Beobachter / kurz online) als Zugpferd zusammen mit Ladenhütern
+- Diagnose je Artikel nutzen: „zu_teuer“ = Preisblocker (Preis runter oder günstiges Paket),
+  „unsichtbar“ = Nachfrageblocker (kaum Impressionen – Preissenken hilft wenig, ideal als Beipack zu einem
+  gefragten Artikel), „klick“ = wird gesehen, aber nicht angeklickt (Titel/Bild – ggf. Einzeltipp),
+  „kauf“ = viele Aufrufe ohne Kauf (Interesse da – leichte Preiskorrektur oder Angebot an Beobachter).
 - Muster aus der Bestellhistorie: Was haben Kunden bisher zusammen gekauft? Welche Plattformen,
   Reihen, Genres verkaufen sich gut?
 Beachte: Ein Paket spart dem Käufer Versandkosten – das ist ein echtes Verkaufsargument.
@@ -118,6 +122,7 @@ def _inventory() -> list[dict]:
             "SELECT * FROM listings WHERE active = 1 AND listing_type = 'FixedPriceItem' ORDER BY title"
         ).fetchall()
     ww = wawi.for_items([r["item_id"] for r in rows])
+    dg = traffic.diagnose_all(checks)
     slow_days = settings.get("slow_days")
     inv = []
     for r in rows:
@@ -133,13 +138,16 @@ def _inventory() -> list[dict]:
             "ek": w["ek"] if w else None,
             "mindestpreis": w["min_vk"] if w else None,
             "ladenhueter": "ja" if days is not None and days >= slow_days and r["watch_count"] <= 1 else "nein",
+            "impressionen_30t": dg[r["item_id"]]["impressions"] if r["item_id"] in dg else None,
+            "aufrufe_30t": dg[r["item_id"]]["views"] if r["item_id"] in dg else None,
+            "diagnose": dg[r["item_id"]]["key"] if r["item_id"] in dg else None,
         })
     return inv
 
 
 def _prompt(inv: list[dict], orders: list[dict]) -> str:
     lines = ["# Bestand (aktive Festpreis-Angebote)",
-             "id | titel | preis € | menge | tage_online | beobachter | markt_Ø5_inkl_versand | eigener_preis_inkl_versand | markt_abstand_% | einkaufspreis € | mindestpreis_einzeln € | ladenhueter"]
+             "id | titel | preis € | menge | tage_online | beobachter | markt_Ø5_inkl_versand | eigener_preis_inkl_versand | markt_abstand_% | einkaufspreis € | mindestpreis_einzeln € | ladenhueter | impressionen_30t | aufrufe_30t | diagnose"]
     for i in inv:
         lines.append(" | ".join(str(v if v is not None else "–") for v in i.values()))
     multi = [o for o in orders if len(o["items"]) > 1 or any(li["qty"] > 1 for li in o["items"])]

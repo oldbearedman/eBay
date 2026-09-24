@@ -22,7 +22,16 @@
   </div>
 </section>
 
+<div class="diag-chips">
+  <a href="?sort={{ sort }}" class="chip {% if not diag %}active{% endif %}">Alle</a>
+  {% for key, (icon, label, advice) in diagnoses.items() %}{% if diag_counts.get(key) %}
+    <a href="?diag={{ key }}&sort={{ sort }}" class="chip {% if diag == key %}active{% endif %}" title="{{ advice }}">{{ icon }} {{ label }} <b>{{ diag_counts[key] }}</b></a>
+  {% endif %}{% endfor %}
+</div>
+{% if diag %}<p class="muted small">{{ diagnoses[diag][2] }}</p>{% endif %}
+
 <form class="filters" method="get">
+  <input type="hidden" name="diag" value="{{ diag }}">
   <input type="search" name="q" value="{{ q }}" placeholder="Titel durchsuchen …">
   <select name="sort" onchange="this.form.submit()">
     {% for key, label in [("alter","Am längsten online"),("neu","Neueste zuerst"),("beobachter","Meiste Beobachter"),("preis_ab","Preis absteigend"),("preis_auf","Preis aufsteigend"),("titel","Titel A–Z"),("markt","Am teuersten ggü. Markt")] %}
@@ -35,7 +44,7 @@
 <div class="table-wrap">
 <table class="listings">
   <thead>
-    <tr><th class="check"></th><th></th><th>Artikel</th><th class="r">Preis</th><th class="r">Menge</th><th class="r">Beobachter</th><th class="r">Online seit</th><th>Markt</th></tr>
+    <tr><th class="check"></th><th></th><th>Artikel</th><th class="r">Preis</th><th class="r">Menge</th><th class="r">Beobachter</th><th class="r" title="letzte 30 Tage">Impr. / Aufrufe</th><th class="r">Online seit</th><th>Markt</th></tr>
   </thead>
   <tbody>
   {% for l in listings %}
@@ -52,6 +61,7 @@
       <td class="r nowrap">{{ "%.2f"|format(l.price)|replace(".", ",") }}&nbsp;€</td>
       <td class="r">{{ l.quantity }}</td>
       <td class="r">{% if l.watch_count %}<span class="pill">{{ l.watch_count }}</span>{% else %}<span class="muted">0</span>{% endif %}</td>
+      <td class="r nowrap small">{% if l.dg and l.dg.impressions is not none %}{{ l.dg.impressions }} / {{ l.dg.views }}<br><span title="{{ l.dg.advice }}">{{ l.dg.icon }} {{ l.dg.label }}</span>{% else %}<span class="muted">–</span>{% endif %}</td>
       <td class="r nowrap {% if l.days is not none and l.days > 60 %}warn{% endif %}">{% if l.days is not none %}{{ l.days }}&nbsp;Tage{% endif %}</td>
       <td class="market nowrap">
         {% if l.listing_type == "FixedPriceItem" %}
@@ -61,7 +71,7 @@
       </td>
     </tr>
   {% else %}
-    <tr><td colspan="8" class="empty">Keine Angebote gefunden.</td></tr>
+    <tr><td colspan="9" class="empty">Keine Angebote gefunden.</td></tr>
   {% endfor %}
   </tbody>
 </table>

@@ -181,3 +181,11 @@ h2.section { font-size: 17px; margin: 28px 0 12px; }
 @media (prefers-color-scheme: dark) { .lvl-knapp { color: #e3c14a; } }
 .settings-form label { display: block; margin-bottom: 18px; font-weight: 600; }
 .settings-form input { display: block; margin-top: 4px; width: 140px; }
+
+/* ── Diagnose ──────────────────────────────────────────────────── */
+.diag-chips { display: flex; gap: 6px; flex-wrap: wrap; margin-bottom: 10px; }
+.chip { font-size: 13px; padding: 4px 10px; border-radius: 999px; border: 1px solid var(--border); color: var(--text); background: var(--surface); }
+.chip:hover { text-decoration: none; border-color: var(--accent); }
+.chip.active { background: var(--accent); border-color: var(--accent); color: var(--accent-text); }
+.chip b { font-weight: 700; margin-left: 2px; }
+.diag-box { display: flex; flex-direction: column; gap: 4px; margin-bottom: 16px; }

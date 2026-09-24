@@ -13,6 +13,15 @@
   </div>
 </div>
 
+{% if dg %}
+<div class="card diag-box">
+  <span class="diag-title">{{ dg.icon }} <strong>{{ dg.label }}</strong> – {{ dg.advice }}</span>
+  <span class="muted small">Letzte 30 Tage: {{ dg.impressions if dg.impressions is not none else "–" }} Impressionen ·
+    {{ dg.views if dg.views is not none else "–" }} Aufrufe{% if dg.view_rate is not none %} ({{ dg.view_rate|string|replace(".", ",") }} % Aufrufquote){% endif %} ·
+    {{ dg.watchers }} Beobachter · {{ dg.days }} Tage online</span>
+</div>
+{% endif %}
+
 {% if not m %}
   <div class="card"><p>Noch nicht geprüft.</p>
     <button class="btn" type="button" data-recheck="{{ l.item_id }}">Marktpreis jetzt prüfen</button></div>

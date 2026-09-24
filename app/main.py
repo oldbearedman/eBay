@@ -11,7 +11,7 @@ from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, Redirect
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 
-from . import advisor, ai, bundles, config, db, ebay_account, ebay_auth, ebay_trading, market, settings, sync, wawi
+from . import advisor, ai, bundles, config, db, ebay_account, ebay_auth, ebay_trading, market, settings, sync, traffic, wawi
 
 log = logging.getLogger("ebay-manager")
 templates = Jinja2Templates(directory=config.BASE_DIR / "app" / "templates")
@@ -45,6 +45,7 @@ async def lifespan(app: FastAPI):
     market.init()
     advisor.init()
     wawi.init()
+    traffic.init()
     task = asyncio.create_task(_auto_sync())
     yield
     task.cancel()
@@ -62,7 +63,7 @@ def _days_online(start_time: str | None) -> int | None:
 
 
 @app.get("/", response_class=HTMLResponse)
-def index(request: Request, sort: str = "alter", q: str = "", fehler: str = ""):
+def index(request: Request, sort: str = "alter", q: str = "", fehler: str = "", diag: str = ""):
     if not ebay_auth.is_authorized():
         return RedirectResponse("/anmelden", status_code=303)
     order = SORTS.get(sort, SORTS["alter"])
@@ -73,13 +74,21 @@ def index(request: Request, sort: str = "alter", q: str = "", fehler: str = ""):
         ).fetchall()
         last = con.execute("SELECT * FROM sync_log ORDER BY id DESC LIMIT 1").fetchone()
     checks = market.all_checks()
-    listings = [{**dict(r), "days": _days_online(r["start_time"]), "m": checks.get(r["item_id"])} for r in rows]
+    diags = traffic.diagnose_all(checks)
+    listings = [{**dict(r), "days": _days_online(r["start_time"]), "m": checks.get(r["item_id"]),
+                 "dg": diags.get(r["item_id"])} for r in rows]
+    diag_counts = {}
+    for l in listings:
+        if l["dg"]:
+            diag_counts[l["dg"]["key"]] = diag_counts.get(l["dg"]["key"], 0) + 1
+    if diag:
+        listings = [l for l in listings if l["dg"] and l["dg"]["key"] == diag]
     if sort == "markt":
         listings.sort(key=lambda l: -(l["m"]["diff_pct"] if l["m"] and l["m"]["diff_pct"] is not None else -999))
     total = sum(l["price"] * max(l["quantity"], 1) for l in listings)
     return templates.TemplateResponse(request, "index.html", {
         "listings": listings, "sort": sort, "q": q, "last": last, "total": total, "fehler": fehler,
-        "job": market.job,
+        "job": market.job, "diag": diag, "diag_counts": diag_counts, "diagnoses": traffic.DIAGNOSES,
     })
 
 
@@ -245,6 +254,7 @@ def market_detail(request: Request, item_id: str, info: str = "", fehler: str = 
             calc["floor"] = wawi.min_price(w["ek"], w["fee_rate"], ship, -settings.get("max_loss_per_bundle"))
     return templates.TemplateResponse(request, "market.html", {
         "l": dict(listing), "m": m, "w": w, "calc": calc, "info": info, "fehler": fehler,
+        "dg": traffic.diagnose_all().get(item_id),
     })
 
 
