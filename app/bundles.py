@@ -164,8 +164,14 @@ def create_draft(item_ids: list[str], price: float | None = None, hint: str | No
                 if d["condition_id"] in CONDITION_RANK else len(CONDITION_RANK))
     first = details[0]
     specifics, notes = _merge_specifics(details, first["category_id"])
+    # Ü18: USK-Merkmal, Titel – oder das Einzelangebot geht schon mit Altersprüfung („Alter“ KP) raus
+    try:
+        age_profiles = {p["id"] for p in ebay_account.shipping_profiles() if p["age_check"]}
+    except Exception:
+        age_profiles = set()
     usk18 = any(("18" in " ".join(d["specifics"].get("USK-Einstufung", [])))
-                or re.search(r"\b(USK|FSK)\s?18\b|ab 18", d["title"], re.I) for d in details)
+                or re.search(r"\b(USK|FSK)\s?18\b|ab 18", d["title"], re.I)
+                or d.get("shipping_profile") in age_profiles for d in details)
     # Versandprofil nach deiner Regel:
     #  Ü18 → immer „Alter“ KP (Altersprüfung, für den Käufer kostenlos → Preis inkl. Versand)
     #  sonst: bis max. N Artikel & Warenwert Y → Kleinpaket, darüber → Paket kostenlos (Preis inkl. Versand)
