@@ -11,7 +11,7 @@ from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, Redirect
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 
-from . import advisor, ai, bundles, config, db, ebay_account, ebay_auth, ebay_trading, market, promotions, settings, sync, traffic, wawi
+from . import advisor, ai, bundles, config, db, ebay_account, ebay_auth, ebay_orders, ebay_trading, market, promotions, settings, sync, traffic, wawi
 
 log = logging.getLogger("ebay-manager")
 templates = Jinja2Templates(directory=config.BASE_DIR / "app" / "templates")
@@ -46,6 +46,7 @@ async def lifespan(app: FastAPI):
     advisor.init()
     wawi.init()
     traffic.init()
+    ebay_orders.init()
     task = asyncio.create_task(_auto_sync())
     yield
     task.cancel()

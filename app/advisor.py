@@ -167,10 +167,10 @@ def _run(analysis_id: int) -> None:
     try:
         inv = _inventory()
         try:
-            orders = ebay_orders.recent_orders()
+            ebay_orders.store_recent()
         except Exception:
-            log.exception("Bestellhistorie nicht abrufbar")
-            orders = []
+            log.exception("Bestellhistorie nicht abrufbar – nutze lokales Archiv")
+        orders = ebay_orders.all_orders()
         stats = {"bestand": len(inv), "bestellungen": len(orders),
                  "mit_marktwert": sum(1 for i in inv if i["markt_avg5_inkl_versand"])}
         system = SYSTEM.replace("{ZIEL}", f"{settings.get('min_profit_per_item'):.2f}".replace(".", ",")).replace(

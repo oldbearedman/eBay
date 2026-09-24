@@ -1,5 +1,5 @@
 """Gleicht die lokale Datenbank mit den aktiven eBay-Angeboten ab."""
-from . import bundles, db, ebay_trading, traffic, wawi
+from . import bundles, db, ebay_orders, ebay_trading, traffic, wawi
 
 
 def run_sync() -> int:
@@ -28,6 +28,11 @@ def run_sync() -> int:
             )
         con.execute("INSERT INTO sync_log(at, ok, count) VALUES (?, 1, ?)", (now, len(items)))
     bundles.check_online_bundles({it["item_id"] for it in items})
+    try:
+        ebay_orders.store_recent()
+    except Exception:
+        import logging
+        logging.getLogger("ebay-manager").exception("Bestellungen nicht abrufbar")
     try:
         traffic.refresh()
     except Exception:
