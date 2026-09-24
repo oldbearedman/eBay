@@ -46,7 +46,7 @@
 
 {% if calc %}
 <div class="card margin-line">
-  <span><strong>WaWi:</strong> EK {{ "%.2f"|format(w.ek)|replace(".", ",") }} € · Mindestpreis {{ "%.2f"|format(w.min_vk)|replace(".", ",") }} €{% if w.lager_reihe %} · Lager: {{ w.lager_reihe }}{% endif %}</span>
+  <span><strong>WaWi:</strong> EK {{ "%.2f"|format(w.ek)|replace(".", ",") }} € · {{ w.tax_label }} · Mindestpreis {{ "%.2f"|format(w.min_vk)|replace(".", ",") }} €{% if w.lager_reihe %} · Lager: {{ w.lager_reihe }}{% endif %}</span>
   <span>Gewinn jetzt: <strong class="{% if calc.now.profit < 1 %}error{% else %}ok{% endif %}">{{ "%.2f"|format(calc.now.profit)|replace(".", ",") }} €</strong></span>
   {% if calc.suggestion %}<span>beim Vorschlag: <strong class="{% if calc.suggestion.profit < 1 %}error{% else %}ok{% endif %}">{{ "%.2f"|format(calc.suggestion.profit)|replace(".", ",") }} €</strong></span>{% endif %}
 </div>

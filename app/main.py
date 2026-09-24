@@ -161,12 +161,20 @@ def bundle_edit(request: Request, bundle_id: int, info: str = "", fehler: str = 
         raise HTTPException(404)
     try:
         profiles = ebay_account.shipping_profiles()
+        returns = ebay_account.return_profiles()
+        payments = ebay_account.payment_profiles()
     except Exception:
-        log.exception("Versandprofile nicht abrufbar")
-        profiles = [{"id": b["draft"]["shipping_profile"], "name": "Versandprofil des ersten Artikels", "description": ""}]
-    margin = wawi.bundle_margin([it["item_id"] for it in b["items"]], b["draft"]["price"], b["draft"].get("porto"))
+        log.exception("Richtlinien nicht abrufbar")
+        profiles = [{"id": b["draft"]["shipping_profile"], "name": "Versandprofil des ersten Artikels", "description": "",
+                     "buyer_cost": 0.0, "age_check": False, "own_cost": None}]
+        returns = [{"id": b["draft"]["return_profile"], "name": "Rücknahme des ersten Artikels", "info": ""}]
+        payments = [{"id": b["draft"]["payment_profile"], "name": "Zahlung des ersten Artikels", "info": ""}]
+    prof = next((p for p in profiles if p["id"] == b["draft"]["shipping_profile"]), None) or {}
+    margin = wawi.bundle_margin([it["item_id"] for it in b["items"]], b["draft"]["price"],
+                                b["draft"].get("porto") or prof.get("own_cost"), charged=prof.get("buyer_cost", 0.0))
     return templates.TemplateResponse(request, "bundle_edit.html", {
-        "b": b, "d": b["draft"], "profiles": profiles, "margin": margin,
+        "b": b, "d": b["draft"], "profiles": profiles, "margin": margin, "returns": returns, "payments": payments,
+        "prof": prof,
         "specifics_text": bundles.format_specifics(b["draft"]["specifics"]),
         "info": info, "fehler": fehler, "pruefung": pruefung, "ai_enabled": ai.enabled(),
     })
@@ -250,11 +258,12 @@ def market_detail(request: Request, item_id: str, info: str = "", fehler: str = 
     calc = None
     if w:
         ship = w["versand_kosten"]
-        calc = {"now": wawi.profit(listing["price"], w["ek"], w["fee_rate"], ship)}
+        calc = {"now": wawi.item_profit(listing["price"], w)}
         if m and m.get("suggestion"):
-            calc["suggestion"] = wawi.profit(m["suggestion"], w["ek"], w["fee_rate"], ship)
+            calc["suggestion"] = wawi.item_profit(m["suggestion"], w)
         if wawi.slow_items([item_id]):
-            calc["floor"] = wawi.min_price(w["ek"], w["fee_rate"], ship, -settings.get("max_loss_per_bundle"))
+            calc["floor"] = wawi.min_price(w["ek"], w["fee_rate"], ship, -settings.get("max_loss_per_bundle"),
+                                           w["tax"], w["cost"])
     return templates.TemplateResponse(request, "market.html", {
         "l": dict(listing), "m": m, "w": w, "calc": calc, "info": info, "fehler": fehler,
         "dg": traffic.diagnose_all().get(item_id),

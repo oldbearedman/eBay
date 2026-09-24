@@ -3,6 +3,7 @@ import html
 import json
 import logging
 import math
+import re
 
 from . import ai, collage, config, db, ebay_account, ebay_trading, wawi
 
@@ -152,17 +153,40 @@ def create_draft(item_ids: list[str], price: float | None = None, hint: str | No
                 if d["condition_id"] in CONDITION_RANK else len(CONDITION_RANK))
     first = details[0]
     specifics, notes = _merge_specifics(details, first["category_id"])
+    usk18 = any(("18" in " ".join(d["specifics"].get("USK-Einstufung", [])))
+                or re.search(r"\b(USK|FSK)\s?18\b|ab 18", d["title"], re.I) for d in details)
+    # Versandprofil: vom ersten Artikel – bei USK 18 zwingend eines mit Altersprüfung (kostenloses bevorzugt)
+    ship_id = first["shipping_profile"]
+    try:
+        profs = ebay_account.shipping_profiles()
+        cur = next((p for p in profs if p["id"] == ship_id), None)
+        if usk18 and not (cur and cur["age_check"]):
+            age = sorted((p for p in profs if p["age_check"]), key=lambda p: p["buyer_cost"])
+            if age:
+                ship_id, cur = age[0]["id"], age[0]
+        buyer_cost = cur["buyer_cost"] if cur else 0.0
+    except Exception:
+        buyer_cost = 0.0
+    # Vorschlagspreise sind Gesamtpreise (inkl. Versand) → Artikelpreis = Gesamt − Versand für den Käufer
+    if price:
+        article_price = max(0.99, round(price - buyer_cost, 2))
+        planned_total = round(price, 2)
+    else:
+        article_price = suggest_price(total, 10)
+        planned_total = round(article_price + buyer_cost, 2)
     draft = {
         "title": _suggest_title(details),
         "discount": round((1 - price / total) * 100) if price and total else 10,
         "total": round(total, 2),
-        "price": round(price, 2) if price else suggest_price(total, 10),
+        "price": article_price,
+        "planned_total": planned_total,
+        "usk18": bool(usk18),
         "description": _description(details),
         "category_id": first["category_id"],
         "categories": sorted({(d["category_id"], d["category_name"]) for d in details}),
         "condition_id": worst["condition_id"],
         "conditions": sorted({(d["condition_id"], d["condition_name"]) for d in details}),
-        "shipping_profile": first["shipping_profile"],
+        "shipping_profile": ship_id,
         "return_profile": first["return_profile"],
         "payment_profile": first["payment_profile"],
         "location": first["location"],
@@ -258,6 +282,8 @@ def save_draft(bundle_id: int, form: dict) -> dict:
     d["condition_id"] = form["condition_id"]
     d["allow_below_min"] = form.get("allow_below_min") == "on"
     d["shipping_profile"] = form["shipping_profile"]
+    d["return_profile"] = form.get("return_profile") or d["return_profile"]
+    d["payment_profile"] = form.get("payment_profile") or d["payment_profile"]
     d["specifics"] = parse_specifics(form["specifics"])
     d["include_originals"] = form.get("include_originals") == "on"
     if form.get("porto"):
@@ -297,8 +323,17 @@ def publish(bundle_id: int) -> dict:
     b = get(bundle_id)
     if b["status"] != "entwurf":
         raise ValueError("Dieses Bündel ist kein Entwurf mehr.")
-    m = wawi.bundle_margin([it["item_id"] for it in b["items"]], b["draft"]["price"], b["draft"].get("porto"))
+    prof = ebay_account.profile_by_id(b["draft"]["shipping_profile"])
+    if b["draft"].get("usk18") and prof is not None and not prof["age_check"] and not b["draft"].get("allow_below_min"):
+        raise ValueError("Das Paket enthält ein USK-18-Spiel – bitte ein Versandprofil mit Altersprüfung "
+                         "(z. B. „Alter“ KP) wählen oder „Trotzdem einstellen“ anhaken.")
+    m = wawi.bundle_margin([it["item_id"] for it in b["items"]], b["draft"]["price"],
+                           b["draft"].get("porto") or (prof or {}).get("own_cost"),
+                           charged=(prof or {}).get("buyer_cost", 0.0))
     if m.get("complete") and not m["allowed"] and not b["draft"].get("allow_below_min"):
+        if m.get("mixed_tax"):
+            raise ValueError("Das Paket mischt differenz- und regelbesteuerte Artikel. "
+                             "Bitte trennen oder „Trotzdem einstellen“ anhaken.")
         raise ValueError(
             f"Zu viel Minus: Gewinn {m['profit']:.2f} € – unterste Grenze für dieses Bündel ist {m['floor_price']:.2f} €. "
             "Preis anheben oder „Trotzdem einstellen“ anhaken.".replace(".", ","))

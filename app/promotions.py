@@ -63,7 +63,7 @@ def margin_check(item_ids: list[str], max_pct: float) -> dict[str, dict]:
             continue
         price = round(prices[iid] * (1 - max_pct / 100), 2)
         # Bei 2+ Artikeln fällt das Porto nur einmal an – pro Artikel anteilig gerechnet (konservativ: halbes Porto)
-        res = wawi.profit(price, w["ek"], w["fee_rate"], w["versand_kosten"] / 2)
+        res = wawi.item_profit(price, w, w["versand_kosten"] / 2)
         p = res["profit"] + 1e-6
         level = ("gut" if p >= target else "knapp" if p >= 0
                  else "abverkauf" if (p >= -max_loss and iid in slow) else "blockiert")

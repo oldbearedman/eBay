@@ -54,19 +54,27 @@
       <label>Rabatt %
         <input name="discount" id="discount" type="number" min="0" max="90" step="1" value="{{ d.discount|int }}">
       </label>
-      <label>Bündelpreis €
+      <label>Artikelpreis € <span class="muted small">(ohne Versand)</span>
         <input name="price" id="price" value="{{ '%.2f'|format(d.price) }}" inputmode="decimal" required>
       </label>
+    </div>
+    <div class="buyer-total" id="buyer-total" data-planned="{{ d.get('planned_total') or '' }}">
+      Käufer zahlt: <strong id="bt-item"></strong> Artikel + <strong id="bt-ship"></strong> Versand =
+      <strong id="bt-total" class="bt-total"></strong>
+      {% if d.get("planned_total") %}<span class="muted small"> · geplant: {{ "%.2f"|format(d.planned_total)|replace(".", ",") }} € gesamt</span>{% endif %}
+      <button type="button" class="icon-btn" id="bt-fix" hidden>Versand herausrechnen</button>
     </div>
 
     {% if margin.complete %}
     <div class="margin-box m-{{ margin.level }}">
       <p class="level-line"><strong>{{ {"gut": "🟢 Gut", "knapp": "🟡 Knapp – kleiner Gewinn", "abverkauf": "🟠 Abverkauf – kleines Minus, erlaubt für Ladenhüter", "blockiert": "🔴 Zu viel Minus"}[margin.level] }}</strong>
         <span class="muted small">· {{ margin.slow_count }} von {{ b["items"]|length }} Artikeln sind Ladenhüter</span></p>
-      <div class="mrow"><span>Bündelpreis</span><span>{{ "%.2f"|format(margin.price)|replace(".", ",") }} €</span></div>
+      <div class="mrow"><span>Artikelpreis</span><span>{{ "%.2f"|format(margin.price)|replace(".", ",") }} €</span></div>
+      {% if margin.charged %}<div class="mrow"><span>+ Versand, den der Käufer zahlt</span><span>{{ "%.2f"|format(margin.charged)|replace(".", ",") }} €</span></div>{% endif %}
       <div class="mrow"><span>− Einkaufspreise (WaWi)</span><span>{{ "%.2f"|format(margin.ek)|replace(".", ",") }} €</span></div>
       <div class="mrow"><span>− eBay-Gebühr ({{ (margin.fee_rate * 100)|round|int }} % + fix)</span><span>{{ "%.2f"|format(margin.fee)|replace(".", ",") }} €</span></div>
-      <div class="mrow"><span>− Differenzsteuer § 25a</span><span>{{ "%.2f"|format(margin.tax)|replace(".", ",") }} €</span></div>
+      {% if margin.mixed_tax %}<p class="small error"><strong>⚠️ Steuerarten gemischt:</strong> § 25a- und regelbesteuerte Artikel gehören nicht in ein Paket (Rechnung müsste aufgeteilt werden). Einstellen nur mit Haken.</p>{% endif %}
+      <div class="mrow"><span>− Umsatzsteuer ({{ margin.tax_label }})</span><span>{{ "%.2f"|format(margin.tax)|replace(".", ",") }} €</span></div>
       <div class="mrow"><span>− Porto
         <input name="porto" class="porto-in" value="{{ '%.2f'|format(margin.shipping) }}" inputmode="decimal" aria-label="Porto für das Bündel"> €</span>
         <span>{{ "%.2f"|format(margin.shipping)|replace(".", ",") }} €</span></div>
@@ -80,7 +88,7 @@
         {% if margin.porto_saved > 0 %} · <span class="ok">{{ "%.2f"|format(margin.porto_saved)|replace(".", ",") }} € Porto gespart</span>{% endif %}
       </p>
       {% if not margin.allowed %}
-        <label class="inline small"><input type="checkbox" name="allow_below_min" {% if d.get("allow_below_min") %}checked{% endif %}> Trotzdem einstellen (mehr Minus als erlaubt)</label>
+        <label class="inline small"><input type="checkbox" name="allow_below_min" {% if d.get("allow_below_min") %}checked{% endif %}> Trotzdem einstellen ({% if margin.mixed_tax %}Steuerarten gemischt{% else %}mehr Minus als erlaubt{% endif %})</label>
       {% endif %}
       <p class="muted small">Nach Preis- oder Portoänderung „Speichern“, um neu zu rechnen.</p>
     </div>
@@ -101,11 +109,28 @@
       </label>
     </div>
 
-    <label>Versandprofil <span class="muted small">– passt das Paketmaß für alle Artikel zusammen?</span>
-      <select name="shipping_profile">
-        {% for p in profiles %}<option value="{{ p.id }}" {% if p.id == d.shipping_profile %}selected{% endif %}>{{ p.name }}{% if p.description %} – {{ p.description }}{% endif %}</option>{% endfor %}
+    <h3 class="form-section">Rahmenbedingungen</h3>
+    {% if d.get("usk18") %}<p class="small {% if prof.get('age_check') %}ok{% else %}error{% endif %}">🔞 Enthält ein USK-18-Spiel – Versand nur mit Altersprüfung.
+      {% if not prof.get("age_check") %}<strong>Das gewählte Profil hat keine Altersprüfung!</strong>{% endif %}</p>{% endif %}
+    <label>Versand <span class="muted small">– passt das Paketmaß für alle Artikel zusammen?</span>
+      <select name="shipping_profile" id="shipping">
+        {% for p in profiles %}<option value="{{ p.id }}" data-buyer="{{ p.buyer_cost }}" {% if p.id == d.shipping_profile %}selected{% endif %}>
+          {{ p.name }} · {% if p.buyer_cost %}Käufer zahlt {{ "%.2f"|format(p.buyer_cost)|replace(".", ",") }} €{% else %}kostenlos für Käufer{% endif %}{% if p.age_check %} · 🔞 Altersprüfung{% endif %}{% if p.handling_days is not none %} · {{ p.handling_days }} T Bearbeitung{% endif %}
+        </option>{% endfor %}
       </select>
     </label>
+    <div class="two">
+      <label>Rücknahme
+        <select name="return_profile">
+          {% for p in returns %}<option value="{{ p.id }}" {% if p.id == d.return_profile %}selected{% endif %}>{{ p.name }}{% if p.info %} · {{ p.info }}{% endif %}</option>{% endfor %}
+        </select>
+      </label>
+      <label>Zahlung
+        <select name="payment_profile">
+          {% for p in payments %}<option value="{{ p.id }}" {% if p.id == d.payment_profile %}selected{% endif %}>{{ p.name }}{% if p.info %} · {{ p.info }}{% endif %}</option>{% endfor %}
+        </select>
+      </label>
+    </div>
 
     <label class="inline"><input type="checkbox" name="include_originals" {% if d.get("include_originals", True) %}checked{% endif %}>
       Nach der Collage auch alle Originalfotos anhängen ({{ d.extra_pictures|length }} Stück, max. 23)</label>
@@ -147,6 +172,25 @@
     const v = total * (1 - (parseFloat(disc.value) || 0) / 100);
     price.value = Math.max(0.99, Math.floor((v + 0.01) * 2) / 2 - 0.01).toFixed(2);
   });
+
+  // Gesamtpreis für den Käufer live anzeigen
+  const ship = document.getElementById('shipping'), bt = document.getElementById('buyer-total');
+  const eur = v => v.toFixed(2).replace('.', ',') + ' €';
+  function updTotal() {
+    const p = parseFloat((price.value || '0').replace(',', '.')) || 0;
+    const s = parseFloat(ship.selectedOptions[0]?.dataset.buyer || '0') || 0;
+    document.getElementById('bt-item').textContent = eur(p);
+    document.getElementById('bt-ship').textContent = s ? eur(s) : 'kostenlos';
+    document.getElementById('bt-total').textContent = eur(p + s);
+    const planned = parseFloat(bt.dataset.planned || '');
+    const fix = document.getElementById('bt-fix');
+    fix.hidden = !(planned && Math.abs(p + s - planned) > 0.009);
+    fix.onclick = () => { price.value = Math.max(0.99, planned - s).toFixed(2); updTotal(); };
+  }
+  if (ship && bt) {
+    ship.addEventListener('change', updTotal); price.addEventListener('input', updTotal);
+    disc.addEventListener('input', () => setTimeout(updTotal, 0)); updTotal();
+  }
 
   const desc = document.getElementById('desc'), prev = document.getElementById('descprev');
   const render = () => prev.innerHTML = desc.value;

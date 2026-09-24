@@ -5,12 +5,16 @@ DEFAULTS = {
     "min_profit_per_item": 1.00,   # Ziel: Gewinn je Artikel im Bündel
     "max_loss_per_bundle": 0.50,   # erlaubtes Minus je Bündel – nur für Ladenhüter
     "slow_days": 45,               # ab so vielen Tagen online (ohne Beobachter) = Ladenhüter
+    "porto_3_4": 3.39,             # Paket-Porto ab 3 Artikeln (Werte aus der WaWi)
+    "porto_5plus": 6.99,           # Paket-Porto ab 5 Artikeln
 }
 
 LABELS = {
     "min_profit_per_item": ("Ziel-Gewinn je Artikel (€)", "Normalfall: So viel soll jeder Artikel im Bündel mindestens bringen."),
     "max_loss_per_bundle": ("Erlaubtes Minus je Bündel (€)", "Nur für Ladenhüter-Bündel: bis zu diesem Verlust darf abverkauft werden."),
     "slow_days": ("Ladenhüter ab … Tagen", "Artikel, die so lange online sind und höchstens 1 Beobachter haben."),
+    "porto_3_4": ("Porto für Pakete mit 3–4 Artikeln (€)", "Mindestens dieses Porto wird angesetzt (bzw. das teuerste Einzelporto, falls höher)."),
+    "porto_5plus": ("Porto für Pakete ab 5 Artikeln (€)", "Mindestens dieses Porto wird angesetzt (bzw. das teuerste Einzelporto, falls höher)."),
 }
 
 

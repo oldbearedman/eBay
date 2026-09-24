@@ -40,7 +40,8 @@ CREATE TABLE IF NOT EXISTS wawi_links (
 def money(v) -> float:
     if v is None:
         return 0.0
-    s = str(v).replace("€", "").replace(".", "").replace(",", ".").strip() if "," in str(v) else str(v).replace("€", "").strip()
+    raw = str(v).replace("€", "").replace("%", "").strip()
+    s = raw.replace(".", "").replace(",", ".") if "," in raw else raw
     try:
         return float(s)
     except ValueError:
@@ -58,22 +59,69 @@ def ebay_net_fee(total: float, rate: float) -> float:
     return total * rate + (FIXED_FEE_HIGH if total > FIXED_FEE_THRESHOLD else FIXED_FEE_LOW)
 
 
-def profit(price: float, ek: float, rate: float, shipping_cost: float) -> dict:
-    """Gewinn nach Gebühren, Porto und Differenzsteuer (§ 25a) – wie in der WaWi."""
+def _tax(price: float, ek: float, method: str) -> float:
+    """Umsatzsteuer wie in der WaWi: § 25a nur auf die Marge, Regelbesteuerung auf den ganzen Preis."""
+    if method == "regel":
+        return price * DIFF_TAX_RATE / (1 + DIFF_TAX_RATE)
+    return max(price - ek, 0.0) * DIFF_TAX_RATE / (1 + DIFF_TAX_RATE)
+
+
+def profit(price: float, ek: float, rate: float, shipping_cost: float,
+           tax_method: str = "25a", cost: float | None = None) -> dict:
+    """Gewinn nach Gebühren, Porto und Umsatzsteuer – wie in der WaWi.
+
+    cost = Einstandskosten (bei abziehbarer Vorsteuer der Netto-EK), sonst der EK.
+    """
     fee = ebay_net_fee(price, rate)
-    tax = max(price - ek, 0.0) * DIFF_TAX_RATE / (1 + DIFF_TAX_RATE)
+    tax = _tax(price, ek, tax_method)
+    c = ek if cost is None else cost
     return {"price": price, "ek": ek, "fee": round(fee, 2), "tax": round(tax, 2),
-            "shipping": shipping_cost, "profit": round(price - ek - shipping_cost - fee - tax, 2)}
+            "shipping": shipping_cost, "profit": round(price - c - shipping_cost - fee - tax, 2)}
 
 
-def min_price(ek: float, rate: float, shipping_cost: float, target: float) -> float:
+def item_profit(price: float, w: dict, shipping_cost: float | None = None) -> dict:
+    """Gewinn eines einzelnen WaWi-Artikels zu einem Preis (+ vom Käufer bezahlter Versand, wie in der WaWi)."""
+    ship = w["versand_kosten"] if shipping_cost is None else shipping_cost
+    charged = w.get("versand_kaeufer", 0.0)
+    res = profit(price + charged, w["ek"], w["fee_rate"], ship, w.get("tax", "25a"), w.get("cost"))
+    res["price"] = price
+    return res
+
+
+def items_profit(price: float, items: list[dict], rate: float, shipping_cost: float, charged: float = 0.0) -> dict:
+    """Gewinn eines Pakets: Preis anteilig (nach Mindestpreis) auf die Artikel verteilt,
+    Steuer je Artikel nach seiner Steuerart, eine Gebühr und ein Porto für alles."""
+    total = price + charged   # Käufer zahlt Artikelpreis + Versand; Gebühr und Steuer auf den Gesamtbetrag
+    weights = [max(i["min_vk"], i["ek"], 0.01) for i in items]
+    total_w = sum(weights)
+    tax = sum(_tax(total * w / total_w, i["ek"], i.get("tax", "25a")) for w, i in zip(weights, items))
+    cost = sum(i.get("cost", i["ek"]) for i in items)
+    fee = ebay_net_fee(total, rate)
+    return {"price": price, "charged": charged, "ek": round(sum(i["ek"] for i in items), 2), "fee": round(fee, 2),
+            "tax": round(tax, 2), "shipping": shipping_cost,
+            "profit": round(total - cost - shipping_cost - fee - tax, 2)}
+
+
+def min_price(ek: float, rate: float, shipping_cost: float, target: float,
+              tax_method: str = "25a", cost: float | None = None, items: list[dict] | None = None,
+              charged: float = 0.0) -> float:
     """Kleinster Preis mit mindestens `target` Gewinn (auch über die Fixgebühr-Schwelle hinweg stabil)."""
-    for cents in range(max(0, int(ek * 100)), 1_000_000):
+    if items:
+        fn = lambda p: items_profit(p, items, rate, shipping_cost, charged)["profit"]  # noqa: E731
+    else:
+        fn = lambda p: profit(p, ek, rate, shipping_cost, tax_method, cost)["profit"]  # noqa: E731
+    for cents in range(max(0, int(ek * 100 * 0.5)), 1_000_000):
         vk = cents / 100
-        if all(profit(p / 100, ek, rate, shipping_cost)["profit"] + 1e-6 >= target
-               for p in range(cents, cents + 25)):
+        if all(fn(p / 100) + 1e-6 >= target for p in range(cents, cents + 25)):
             return vk
     return 9999.99
+
+
+def bundle_shipping(items: list[dict]) -> float:
+    """Porto fürs Paket: teuerstes Einzelporto – mindestens die Staffel nach Stückzahl (Regeln)."""
+    n = len(items)
+    tier = settings.get("porto_5plus") if n >= 5 else settings.get("porto_3_4") if n >= 3 else 0.0
+    return max(max(i["versand_kosten"] for i in items), tier)
 
 
 # ── WaWi lesen ──────────────────────────────────────────────────────────
@@ -99,7 +147,16 @@ def products() -> dict[str, dict]:
     """Alle WaWi-Artikel nach Produktnummer, mit den für uns relevanten Feldern."""
     out = {}
     for r in _rows():
+        ek = money(r.get("ek"))
+        label = r.get("verkaufsbesteuerung") or "noch ungeklärt"
+        vat = money(r.get("ek_ust_satz")) / 100 if r.get("ek_ust_satz") else 0.0
         out[r["produktnr"]] = {
+            # wie WaWi: „noch ungeklärt“ wird vorsichtshalber wie Regelbesteuerung gerechnet
+            "tax": "25a" if "25a" in label else "regel",
+            "versand_kaeufer": money(r.get("versand_kaeufer")),
+            "tax_label": label,
+            # Einstandskosten: bei abziehbarer Vorsteuer der Netto-EK
+            "cost": ek / (1 + vat) if r.get("vorsteuer_abziehbar") == "Ja" and vat > 0 else ek,
             "produktnr": r["produktnr"], "artikel": r.get("artikel", ""), "status": r.get("status", ""),
             "kategorie": r.get("kategorie", ""), "zustand": r.get("zustand", ""),
             "ek": money(r.get("ek")), "min_vk": money(r.get("min_vk")),
@@ -285,21 +342,24 @@ def for_items(item_ids: list[str]) -> dict[str, dict]:
     return {i: prods[ln[i]] for i in item_ids if i in ln and ln[i] in prods}
 
 
-def bundle_margin(item_ids: list[str], price: float, shipping_cost: float | None = None) -> dict:
+def bundle_margin(item_ids: list[str], price: float, shipping_cost: float | None = None,
+                  charged: float = 0.0) -> dict:
     """Marge eines Bündels: EK-Summe, ein Porto statt vieler, Gebühren, Steuer, Mindestpreis."""
     data = for_items(item_ids)
     missing = [i for i in item_ids if i not in data]
     if missing:
         return {"complete": False, "missing": missing, "known": len(data)}
-    ek = sum(p["ek"] for p in data.values())
-    rate = max(p["fee_rate"] for p in data.values())
-    single_shipping = sum(p["versand_kosten"] for p in data.values())
-    ship = shipping_cost if shipping_cost is not None else max(p["versand_kosten"] for p in data.values())
+    items = list(data.values())
+    ek = sum(p["ek"] for p in items)
+    rate = max(p["fee_rate"] for p in items)
+    single_shipping = sum(p["versand_kosten"] for p in items)
+    ship = shipping_cost if shipping_cost is not None else bundle_shipping(items)
     target = settings.get("min_profit_per_item") * len(item_ids)
     max_loss = settings.get("max_loss_per_bundle")
     slow = slow_items(item_ids)
     is_slow = len(slow) * 2 >= len(item_ids)  # mind. die Hälfte sind Ladenhüter
-    res = profit(price, ek, rate, ship)
+    taxes = {p.get("tax", "25a") for p in items}
+    res = items_profit(price, items, rate, ship, charged)
     p = res["profit"] + 1e-6
     # Ampel: gut → knapp → abverkauf (nur Ladenhüter, kleines Minus) → blockiert
     if p >= target:
@@ -311,14 +371,17 @@ def bundle_margin(item_ids: list[str], price: float, shipping_cost: float | None
     else:
         level = "blockiert"
     res.update(
-        complete=True, target=target, min_price=min_price(ek, rate, ship, target),
-        floor_price=min_price(ek, rate, ship, -max_loss if is_slow else 0.0),
+        complete=True, target=target, min_price=min_price(ek, rate, ship, target, items=items, charged=charged),
+        floor_price=min_price(ek, rate, ship, -max_loss if is_slow else 0.0, items=items, charged=charged),
         porto_saved=round(single_shipping - ship, 2), fee_rate=rate,
-        sum_min_vk=round(sum(p["min_vk"] for p in data.values()), 2),
+        sum_min_vk=round(sum(p["min_vk"] for p in items), 2),
         level=level, slow_count=len(slow), is_slow=is_slow, max_loss=max_loss,
+        # Steuerart: § 25a und Regelbesteuerung nicht in einem Paket mischen (Rechnung müsste aufgeteilt werden)
+        tax_label=("gemischt" if len(taxes) > 1 else "Regelbesteuerung 19 %" if taxes == {"regel"} else "Differenzbesteuerung § 25a"),
+        mixed_tax=len(taxes) > 1,
     )
-    res["ok"] = level == "gut"
-    res["allowed"] = level != "blockiert"
+    res["ok"] = level == "gut" and not res["mixed_tax"]
+    res["allowed"] = level != "blockiert" and not res["mixed_tax"]
     return res
 
 

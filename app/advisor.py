@@ -49,6 +49,8 @@ HARTE REGELN:
 - Gleiche Konsole innerhalb eines Pakets. Ausnahme: PS1 + PS2 (die PS2 spielt PS1-Spiele ab). Nichtspiele
   (DVDs, Gläser, Kameras) nur mit Passendem kombinieren.
 - Keine Dubletten (dasselbe Spiel zweimal) im Paket.
+- Steuerart nicht mischen: „25a“ (Differenzbesteuerung) nicht mit „regel19“ (Regelbesteuerung) in einem Paket –
+  die Rechnung müsste sonst aufgeteilt werden. Bei regel19 fällt die Umsatzsteuer auf den ganzen Preis an.
 - Vollständigkeit nicht mischen: „cib“ (komplett) nicht mit „teil“ (ohne Anleitung / nur Disc) zusammen.
   Neu/OVP nicht mit deutlich gebrauchter Ware.
 - Nur item_ids aus der Bestandsliste; jeder Artikel höchstens in einem Paket.
@@ -211,8 +213,8 @@ def _inventory() -> tuple[list[dict], dict]:
             "ek": w["ek"] if w else None,
             "min_einzeln": w["min_vk"] if w else None,
             # Gewinn, den der Artikel zum aktuellen Preis allein nach allen Kosten bringt
-            "gewinn_einzeln": (wawi.profit(r["price"], w["ek"], w["fee_rate"], w["versand_kosten"])["profit"]
-                               if w else None),
+            "gewinn_einzeln": wawi.item_profit(r["price"], w)["profit"] if w else None,
+            "steuer": ("25a" if w["tax"] == "25a" else "regel19") if w else None,
             "ladenhueter": "ja" if days is not None and days >= slow_days and r["watch_count"] <= 1 else "nein",
         })
     return inv, meta.groups([i["id"] for i in inv], metas)
@@ -268,6 +270,8 @@ def check_bundle(item_ids: list[str], price: float, inv_by_id: dict, metas: dict
         problems.append("Dublette: dasselbe Spiel mehrfach")
     if {"cib", "teil"} <= complete:
         problems.append("Vollständigkeit gemischt (cib + teil)")
+    if mg.get("mixed_tax"):
+        problems.append("Steuerarten gemischt (§ 25a + Regelbesteuerung 19 %) – nicht zusammen verkaufen")
     share = round(price / market_sum * 100) if market_sum else None
     anchor_share = round(price / anchor * 100) if anchor else None
     if anchor_share is not None and anchor_share < 75:
@@ -283,7 +287,8 @@ def check_bundle(item_ids: list[str], price: float, inv_by_id: dict, metas: dict
     }
     if mg.get("complete"):
         out.update(ampel=mg["level"], gewinn=mg["profit"], zielpreis=mg["min_price"],
-                   untergrenze=mg["floor_price"], porto_gespart=mg["porto_saved"])
+                   untergrenze=mg["floor_price"], porto_gespart=mg["porto_saved"], porto=mg["shipping"],
+                   steuerart=mg["tax_label"])
         if mg["level"] == "blockiert":
             problems.append(f"zu viel Minus – mindestens {mg['floor_price']:.2f} € nötig")
     else:

@@ -12,6 +12,8 @@
   </form>
 </div>
 <p class="muted">Claude wertet deinen Bestand, die Marktpreise (inkl. Versand) und deine Bestellhistorie aus und schlägt Pakete samt Preis vor.
+  <strong>Alle Paketpreise sind Gesamtpreise für den Käufer (inkl. Versand)</strong> – beim Anlegen wird daraus automatisch der
+  passende Artikelpreis zum gewählten Versandprofil berechnet.
   {% if checked < total %}<br><strong>Tipp:</strong> Erst „Alle Marktpreise prüfen“ laufen lassen – bisher haben {{ checked }} von {{ total }} Angeboten einen Marktwert.{% endif %}</p>
 
 {% if not a %}
@@ -45,6 +47,7 @@
         </div>
         <div class="sg-price">
           <span class="num">{{ "%.2f"|format(b.preis)|replace(".", ",") }} €</span>
+          <span class="muted small">gesamt inkl. Versand</span>
           {% set einzeln = (b.pruefung.summe_einzelpreise_inkl_versand if b.pruefung and b.pruefung.summe_einzelpreise_inkl_versand else b.summe_einzeln) %}
           <span class="muted small">einzeln {{ "%.2f"|format(einzeln)|replace(".", ",") }} € inkl. Versand</span>
           {% if b.pruefung and b.pruefung.gewinn is not none and b.pruefung.gewinn is defined %}<span class="small ok">Gewinn {{ "%.2f"|format(b.pruefung.gewinn)|replace(".", ",") }} €</span>{% endif %}
