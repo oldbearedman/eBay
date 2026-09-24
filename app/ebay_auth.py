@@ -71,6 +71,7 @@ def _token_request(data: dict) -> dict:
 
 def _save(tokens: dict) -> None:
     TOKEN_FILE.write_text(json.dumps(tokens, indent=2), encoding="utf-8")
+    TOKEN_FILE.chmod(0o600)  # nur für den eigenen Benutzer lesbar
 
 
 def _load() -> dict | None:
