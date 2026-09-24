@@ -29,10 +29,19 @@
 <div class="market-grid">
   <div class="card kpi"><span class="lbl">Dein Preis inkl. Versand</span><span class="num">{{ "%.2f"|format(m.own_price)|replace(".", ",") }} €</span>
     <span class="muted small">{% if m.own_shipping %}davon Versand {{ "%.2f"|format(m.own_shipping)|replace(".", ",") }} €{% else %}Versand kostenlos{% endif %}</span></div>
-  <div class="card kpi"><span class="lbl">Ø der 5 günstigsten Konkurrenten</span><span class="num">{% if m.avg5 %}{{ "%.2f"|format(m.avg5)|replace(".", ",") }} €{% else %}–{% endif %}</span>
-    <span class="muted small">{{ m.found }} vergleichbare Angebote · Median {% if m.median %}{{ "%.2f"|format(m.median)|replace(".", ",") }} €{% else %}–{% endif %}</span></div>
+  <div class="card kpi"><span class="lbl">Marktpreis (vergleichbare Angebote)</span><span class="num">{% if m.avg5 %}{{ "%.2f"|format(m.avg5)|replace(".", ",") }} €{% else %}–{% endif %}</span>
+    <span class="muted small">{{ m.found }} vergleichbar{% if m.excluded %} ({{ m.excluded }} mit schlechterem Zustand / unvollständig aussortiert){% endif %} · Median {% if m.median %}{{ "%.2f"|format(m.median)|replace(".", ",") }} €{% else %}–{% endif %}</span></div>
   <div class="card kpi verdict-{{ m.verdict }}"><span class="lbl">Einschätzung</span><span class="num small-num">{{ m.label }}</span>
     {% if m.rough %}<span class="muted small">grobe Schätzung – kein exakt gleicher Artikel</span>{% endif %}</div>
+</div>
+{% if m.own_sales %}
+<div class="card own-sales">
+  <strong>Selbst schon verkauft:</strong> {{ m.own_sales|length }}× für Ø {{ "%.2f"|format(m.sold_avg)|replace(".", ",") }} €
+  <span class="muted small">(echte Verkaufspreise aus WaWi / Bestellungen)</span>
+  <ul class="small">{% for s in m.own_sales[:5] %}<li>{{ s.date }} · {{ "%.2f"|format(s.price)|replace(".", ",") }} € · {{ s.title }} <span class="muted">({{ s.source }})</span></li>{% endfor %}</ul>
+</div>
+{% endif %}
+<div style="display:none">
 </div>
 
 {% if calc %}
@@ -62,7 +71,7 @@
 
 <div class="card">
   <div class="bundle-head">
-    <h2>Günstigste vergleichbare Angebote <span class="muted small">(aktuell, andere Verkäufer)</span></h2>
+    <h2>Günstigste vergleichbare Angebote <span class="muted small">(gleiche Vollständigkeit & ähnlicher Zustand)</span></h2>
     <a class="btn secondary" href="{{ m.sold_url }}" target="_blank" rel="noopener">Verkaufte bei eBay ansehen ↗</a>
   </div>
   <table class="listings">

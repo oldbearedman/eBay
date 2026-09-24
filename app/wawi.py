@@ -330,3 +330,9 @@ def write_skus() -> dict:
         except Exception as exc:
             errors.append(f"#{iid}: {exc}")
     return {"done": done, "errors": errors}
+
+
+def sold_rows() -> list[dict]:
+    """Verkaufte WaWi-Artikel mit tatsächlichem Verkaufspreis (vk)."""
+    return [{"artikel": r.get("artikel", ""), "vk": money(r.get("vk")), "verkauft_am": r.get("verkauft_am", "")}
+            for r in _rows() if r.get("status") == "Verkauft" and r.get("vk")]

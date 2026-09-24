@@ -49,6 +49,10 @@ def init() -> None:
         cols = {r["name"] for r in con.execute("PRAGMA table_info(market_checks)")}
         if "own_shipping" not in cols:  # ältere Datenbank
             con.execute("ALTER TABLE market_checks ADD COLUMN own_shipping REAL NOT NULL DEFAULT 0")
+        if "own_sales" not in cols:
+            con.execute("ALTER TABLE market_checks ADD COLUMN own_sales TEXT NOT NULL DEFAULT '[]'")
+        if "excluded" not in cols:
+            con.execute("ALTER TABLE market_checks ADD COLUMN excluded INTEGER NOT NULL DEFAULT 0")
 
 
 def _norm(s: str) -> str:
@@ -71,20 +75,106 @@ def own_username() -> str:
     return name
 
 
+# Plattform im Titel erkennen: (Muster, Kurzname) – spezifische zuerst
+TITLE_PLATFORMS = [
+    (r"xbox\s?360|x360", "Xbox 360"), (r"xbox\s?one", "Xbox One"), (r"xbox\s?series", "Xbox Series X"),
+    (r"ps\s?5|playstation\s?5", "PS5"), (r"ps\s?4|playstation\s?4", "PS4"), (r"ps\s?3|playstation\s?3", "PS3"),
+    (r"ps\s?2|playstation\s?2", "PS2"), (r"ps\s?1|psx|ps\s?one|playstation\s?1\b|playstation\s?one", "PS1"),
+    (r"\bpsp\b", "PSP"), (r"\bvita\b", "PS Vita"), (r"wii\s?u", "Wii U"), (r"\bwii\b", "Wii"),
+    (r"\bswitch\b", "Switch"), (r"\b3ds\b", "3DS"), (r"nintendo\s?ds|\bnds\b|\bds\b", "DS"),
+    (r"gamecube", "GameCube"), (r"\bxbox\b", "Xbox"),
+]
+
+
+def _title_platform(title: str) -> tuple[str | None, int]:
+    """Plattform aus dem Titel und die Position, an der sie steht."""
+    t = title.lower()
+    best = None
+    for pat, short in TITLE_PLATFORMS:
+        m = re.search(pat, t)
+        if m and (best is None or m.start() < best[1]):
+            best = (short, m.start())
+    return best if best else (None, -1)
+
+
+def _name_from_title(title: str) -> str:
+    """Spielname = Text vor der Plattform (bzw. danach, falls die Plattform vorne steht)."""
+    plat, pos = _title_platform(title)
+    part = title[:pos] if pos > 3 else title[pos:]
+    if pos <= 3:  # Plattform steht vorne: Plattform und Trenner entfernen, bis zum nächsten Trenner lesen
+        part = re.sub(r"^[^\-–|:]*?(ps\s?\d|xbox\s?\d*|playstation\s?\d?|nintendo\s?\w*|wii\s?u?|switch)\s*[\-–|:/]?\s*",
+                      "", part, flags=re.I)
+    part = re.split(r"\s[\-–|]\s|\(|\[|,", part)[0]
+    return re.sub(r"\s+", " ", part).strip(" -–:|")
+
+
 def build_query(details: dict) -> tuple[str, list[str], list[str]]:
     """Suchbegriff + Pflichtwörter + Plattform-Varianten für die Trefferprüfung."""
     spec = details["specifics"]
     name = (spec.get("Spielname") or [None])[0]
     plat = bundles.PLATFORM_SHORT.get((spec.get("Plattform") or [None])[0] or "")
-    if name:
-        query = f"{name} {plat or ''}".strip()
-        must = [w for w in _norm(name).split() if len(w) > 1 or w.isdigit()]
+    if not name:
+        # Kein Merkmal „Spielname“: Name und Plattform aus dem Titel lesen
+        tplat, _ = _title_platform(details["title"])
+        if tplat:
+            name, plat = _name_from_title(details["title"]), plat or tplat
+    if name and plat:
+        query = f"{name} {plat}".strip()
+        must = [w for w in _norm(name).split() if (len(w) > 1 or w.isdigit()) and w not in ("the", "of", "und", "and")]
         return query, must, PLATFORM_TOKENS.get(plat, [])
-    # Freie Titel (grobe Schätzung): Mengen-/Füllwörter weglassen, erste 4 aussagekräftige Wörter
+    # Kein Spiel (Zubehör o. ä.) – grobe Schätzung: Füllwörter weglassen, erste 4 aussagekräftige Wörter
     words = [w for w in details["title"].split()
              if not re.match(r"^(\d+-?tlg\.?|\d+x|set|neu|ovp|kompatibel|mit|für|und|&|/)$", w, re.I)][:4]
     query = " ".join(words)
     return query, [w for w in _norm(query).split() if len(w) > 2], []
+
+
+# ── Vollständigkeit & Zustand: nur Gleiches mit Gleichem vergleichen ────
+
+PARTIAL = re.compile(
+    r"ohne\s+(anleitung|handbuch|booklet|beilage|hülle|huelle|ovp|cover)|\bo\.?\s?b\.?\b|nur\s+(disc|cd|dvd|modul|spiel|umd|cartridge)"
+    r"|disc\s+only|\bloose\b|\blose\b|ohne\s+anl", re.I)
+COMPLETE = re.compile(r"\bcib\b|komplett|vollständig|mit\s+(anleitung|handbuch|booklet)|\bovp\b|sealed|versiegelt", re.I)
+
+COND_RANK_TEXT = [("defekt", 6), ("akzeptabel", 4), ("gut", 3)]  # „sehr gut“ wird vorher geprüft
+COND_RANK_ID = {"1000": 0, "1500": 1, "1750": 1, "2000": 1, "2500": 1, "2750": 1, "4000": 2, "3000": 2,
+                "5000": 3, "6000": 4, "7000": 6}
+
+
+def completeness(title: str) -> str | None:
+    if PARTIAL.search(title):
+        return "teil"
+    if COMPLETE.search(title):
+        return "cib"
+    return None
+
+
+def _cond_rank(text: str | None) -> int | None:
+    t = (text or "").lower()
+    if not t:
+        return None
+    if "neu" in t and "neuwertig" not in t and "wie neu" not in t:
+        return 0
+    if "neuwertig" in t or "wie neu" in t:
+        return 1
+    if "sehr gut" in t:
+        return 2
+    for word, rank in COND_RANK_TEXT:
+        if word in t:
+            return rank
+    return None
+
+
+def _comparable(offer: dict, own_complete: str | None, own_rank: int | None) -> bool:
+    theirs = completeness(offer["title"])
+    if own_complete == "cib" and theirs == "teil":
+        return False
+    if own_complete == "teil" and theirs == "cib":
+        return False
+    r = _cond_rank(offer.get("condition"))
+    if own_rank is not None and r is not None and r - own_rank >= 2:
+        return False  # deutlich schlechterer Zustand
+    return True
 
 
 def _matches(title: str, must: list[str], plat_tokens: list[str]) -> bool:
@@ -144,49 +234,99 @@ def check(item_id: str) -> dict:
                 "url": s.get("itemWebUrl"), "condition": s.get("condition"),
                 "image": (s.get("image") or {}).get("imageUrl"),
             }
-    # Käufer vergleichen den Gesamtpreis inkl. Versand
-    offers = sorted(seen.values(), key=lambda o: o["total"])
-    cheapest = offers[:5]
+    # Nur vergleichbare Angebote (Vollständigkeit + Zustand); Käufer vergleichen den Gesamtpreis inkl. Versand
+    own_complete = completeness(details["title"])
+    own_rank = COND_RANK_ID.get(details.get("condition_id") or "")
+    all_offers = sorted(seen.values(), key=lambda o: o["total"])
+    offers = [o for o in all_offers if _comparable(o, own_complete, own_rank)]
+    totals = [o["total"] for o in offers]
+    # Marktpreis = unteres Drittel der vergleichbaren Angebote (robust gegen Ausreißer nach unten)
+    if len(totals) >= 5:
+        ref = totals[int(len(totals) * 0.3)]
+    elif totals:
+        ref = statistics.median(totals)
+    else:
+        ref = None
     own_ship = details.get("shipping_cost") or 0.0
     result = {
         "item_id": item_id,
         "checked_at": db.now_iso(),
-        "query": query,
+        "query": query if plat_tokens else f"~{query}",   # „~“ = grobe Schätzung
         "found": len(offers),
-        "avg5": round(statistics.mean(o["total"] for o in cheapest), 2) if cheapest else None,
-        "min_price": cheapest[0]["total"] if cheapest else None,
-        "median": round(statistics.median(o["total"] for o in offers), 2) if offers else None,
+        "avg5": round(ref, 2) if ref else None,            # Spaltenname historisch: hier steht der Marktpreis
+        "min_price": totals[0] if totals else None,
+        "median": round(statistics.median(totals), 2) if totals else None,
         "own_price": round(details["price"] + own_ship, 2),
         "own_shipping": own_ship,
-        "samples": json.dumps(cheapest, ensure_ascii=False),
+        "samples": json.dumps(offers[:8], ensure_ascii=False),
+        "own_sales": json.dumps(own_sales(item_id, details["title"]), ensure_ascii=False),
+        "excluded": len(all_offers) - len(offers),
     }
-    result["query"] = query if plat_tokens else f"~{query}"   # „~“ = grobe Schätzung
     with db.connect() as con:
         con.execute(
-            """INSERT OR REPLACE INTO market_checks(item_id, checked_at, query, found, avg5, min_price, median, own_price, own_shipping, samples)
-               VALUES (:item_id, :checked_at, :query, :found, :avg5, :min_price, :median, :own_price, :own_shipping, :samples)""",
+            """INSERT OR REPLACE INTO market_checks(item_id, checked_at, query, found, avg5, min_price, median,
+                   own_price, own_shipping, samples, own_sales, excluded)
+               VALUES (:item_id, :checked_at, :query, :found, :avg5, :min_price, :median,
+                   :own_price, :own_shipping, :samples, :own_sales, :excluded)""",
             result,
         )
     return describe(result, details["category_id"])
+
+
+def own_sales(item_id: str, title: str) -> list[dict]:
+    """Eigene Verkäufe desselben Artikels – echte Verkaufspreise aus WaWi und Bestellarchiv."""
+    from . import ebay_orders, wawi
+    out = []
+    try:
+        if wawi.available():
+            link = wawi.links().get(item_id)
+            prods = wawi.products()
+            ref_name = prods[link]["artikel"] if link in prods else title
+            for r in wawi.sold_rows():
+                if r["vk"] > 0 and wawi._score(ref_name, r["artikel"]) >= 0.8:
+                    out.append({"date": r["verkauft_am"], "price": r["vk"], "source": "WaWi", "title": r["artikel"]})
+        for o in ebay_orders.all_orders():
+            for li in o["items"]:
+                if li["item_id"] != item_id and wawi._score(title, li["title"]) >= 0.85:
+                    out.append({"date": o["date"], "price": li["price"] + li["shipping"], "source": "eBay", "title": li["title"]})
+    except Exception:
+        pass
+    # Doppelte (gleicher Verkauf in WaWi und eBay-Archiv) grob entfernen
+    seen, uniq = set(), []
+    for s in sorted(out, key=lambda s: s["date"] or "", reverse=True):
+        key = (s["date"], round(s["price"]))
+        if key not in seen:
+            seen.add(key)
+            uniq.append(s)
+    return uniq[:10]
 
 
 def describe(row: dict, category_id: str | None = None) -> dict:
     """Bewertung für die Oberfläche."""
     out = dict(row)
     out["samples"] = json.loads(row["samples"]) if isinstance(row["samples"], str) else row["samples"]
+    sales = row.get("own_sales")
+    out["own_sales"] = json.loads(sales) if isinstance(sales, str) else (sales or [])
     out["rough"] = row["query"].startswith("~")
     out["sold_url"] = sold_search_url(row["query"].lstrip("~"), category_id)
-    avg = row["avg5"]
-    if not avg:
+    sold_prices = [s["price"] for s in out["own_sales"]]
+    out["sold_avg"] = round(statistics.mean(sold_prices), 2) if sold_prices else None
+    ref = row["avg5"]
+    if not ref:
         out.update(verdict="keine", label="Keine vergleichbaren Angebote gefunden", diff_pct=None, suggestion=None)
         return out
-    diff = (row["own_price"] - avg) / avg * 100
+    diff = (row["own_price"] - ref) / ref * 100
     out["diff_pct"] = round(diff)
     ship = row.get("own_shipping") or 0.0
-    out["suggestion"] = max(0.99, bundles.suggest_price(avg - ship, 3)) if avg - ship > 1 else None
-    if diff > 15:
+    out["suggestion"] = max(0.99, bundles.suggest_price(ref - ship, 3)) if ref - ship > 1 else None
+    proven = out["sold_avg"] and row["own_price"] <= out["sold_avg"] * 1.1
+    if proven:
+        out.update(verdict="ok", label=f"bewährt – schon {len(sold_prices)}× für Ø {out['sold_avg']:.2f} € verkauft".replace(".", ","))
+    elif diff > 25 and out["rough"]:
+        out.update(verdict="unsicher", label=f"{diff:+.0f} % – unsicherer Vergleich, bitte prüfen")
+    elif diff > 25:
         out.update(verdict="teuer", label=f"{diff:+.0f} % über Markt")
-    elif diff < -15:
+    elif diff < -20:
         out.update(verdict="guenstig", label=f"{diff:+.0f} % unter Markt – evtl. Luft nach oben")
     else:
         out.update(verdict="ok", label=f"marktgerecht ({diff:+.0f} %)")

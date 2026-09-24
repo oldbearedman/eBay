@@ -98,12 +98,11 @@ def diagnose_all(market_checks: dict[str, dict] | None = None) -> dict[str, dict
     for r in rows:
         age = (now - datetime.fromisoformat(r["start_time"].replace("Z", "+00:00"))).days if r["start_time"] else 0
         m = checks.get(r["item_id"])
-        diff = m["diff_pct"] if m else None
         imp, vw = r["impressions"], r["views"]
         rate = (vw / imp) if imp else 0.0
         if age < 7:
             key = "neu"
-        elif diff is not None and diff > 15:
+        elif m and m.get("verdict") == "teuer":
             key = "zu_teuer"
         elif imp is not None and imp <= low_imp:
             key = "unsichtbar"

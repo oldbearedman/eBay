@@ -39,6 +39,8 @@ Analysiere gründlich und schlage Bündel (Pakete aus 2–6 Angeboten) vor, z. B
   „unsichtbar“ = Nachfrageblocker (kaum Impressionen – Preissenken hilft wenig, ideal als Beipack zu einem
   gefragten Artikel), „klick“ = wird gesehen, aber nicht angeklickt (Titel/Bild – ggf. Einzeltipp),
   „kauf“ = viele Aufrufe ohne Kauf (Interesse da – leichte Preiskorrektur oder Angebot an Beobachter).
+- „selbst_verkauft“ sind echte Verkaufspreise aus dem eigenen Shop – sie wiegen schwerer als Angebotspreise
+  der Konkurrenz. Was sich zu einem Preis schon verkauft hat, ist nicht „zu teuer“.
 - Muster aus der Bestellhistorie: Was haben Kunden bisher zusammen gekauft? Welche Plattformen,
   Reihen, Genres verkaufen sich gut?
 Beachte: Ein Paket spart dem Käufer Versandkosten – das ist ein echtes Verkaufsargument.
@@ -135,6 +137,7 @@ def _inventory() -> list[dict]:
             "markt_avg5_inkl_versand": m["avg5"] if m else None,
             "eigener_preis_inkl_versand": m["own_price"] if m else None,
             "markt_abstand_prozent": m["diff_pct"] if m else None,
+            "selbst_verkauft": (f"{len(m['own_sales'])}x Ø {m['sold_avg']:.2f}" if m and m.get("sold_avg") else None),
             "ek": w["ek"] if w else None,
             "mindestpreis": w["min_vk"] if w else None,
             "ladenhueter": "ja" if days is not None and days >= slow_days and r["watch_count"] <= 1 else "nein",
@@ -147,7 +150,7 @@ def _inventory() -> list[dict]:
 
 def _prompt(inv: list[dict], orders: list[dict]) -> str:
     lines = ["# Bestand (aktive Festpreis-Angebote)",
-             "id | titel | preis € | menge | tage_online | beobachter | markt_Ø5_inkl_versand | eigener_preis_inkl_versand | markt_abstand_% | einkaufspreis € | mindestpreis_einzeln € | ladenhueter | impressionen_30t | aufrufe_30t | diagnose"]
+             "id | titel | preis € | menge | tage_online | beobachter | marktpreis_inkl_versand (vergleichbarer Zustand) | eigener_preis_inkl_versand | markt_abstand_% | selbst_verkauft (eigene echte Verkaufspreise) | einkaufspreis € | mindestpreis_einzeln € | ladenhueter | impressionen_30t | aufrufe_30t | diagnose"]
     for i in inv:
         lines.append(" | ".join(str(v if v is not None else "–") for v in i.values()))
     multi = [o for o in orders if len(o["items"]) > 1 or any(li["qty"] > 1 for li in o["items"])]
