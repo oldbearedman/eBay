@@ -38,6 +38,7 @@
   <form method="post" class="card bundle-form" id="bf">
     {% set locked = b.status != "entwurf" %}
     <fieldset {% if locked %}disabled{% endif %}>
+    {% if d.get("text_outdated") %}<p class="banner error small">Du hast das Versandprofil geändert – bitte „Neu schreiben lassen“, damit die Versandangabe in der Beschreibung stimmt.</p>{% endif %}
     {% if d.get("ai_error") %}<p class="banner error small">Claude konnte keinen Text schreiben ({{ d.ai_error }}) – Vorlage wird verwendet.</p>{% endif %}
     <div class="text-source">
       <span class="muted small">{% if d.get("text_by") == "claude" %}✨ Titel &amp; Beschreibung von Claude geschrieben – bitte kurz prüfen{% else %}Titel &amp; Beschreibung aus der Vorlage{% endif %}</span>

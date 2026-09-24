@@ -229,7 +229,8 @@ def create_draft(item_ids: list[str], price: float | None = None, hint: str | No
     }
     if ai.enabled():
         try:
-            draft.update(ai.write_bundle_text(draft["sources"], draft["price"], hint), text_by="claude")
+            draft.update(ai.write_bundle_text(draft["sources"], draft["price"], hint, _shipping_note(ship_id)),
+                         text_by="claude")
         except Exception as exc:
             log.exception("Claude-Text fehlgeschlagen")
             draft["ai_error"] = str(exc)[:300]
@@ -261,8 +262,10 @@ def rewrite_text(bundle_id: int) -> None:
     """Titel und Beschreibung neu von Claude schreiben lassen."""
     b = get(bundle_id)
     d = b["draft"]
-    d.update(ai.write_bundle_text(d["sources"], d["price"], d.get("hint")), text_by="claude")
+    d.update(ai.write_bundle_text(d["sources"], d["price"], d.get("hint"), _shipping_note(d["shipping_profile"])),
+             text_by="claude")
     d.pop("ai_error", None)
+    d.pop("text_outdated", None)
     _update(bundle_id, draft=json.dumps(d, ensure_ascii=False))
 
 
@@ -309,6 +312,8 @@ def save_draft(bundle_id: int, form: dict) -> dict:
     d["category_id"] = form["category_id"]
     d["condition_id"] = form["condition_id"]
     d["allow_below_min"] = form.get("allow_below_min") == "on"
+    if form["shipping_profile"] != d.get("shipping_profile") and d.get("text_by") == "claude":
+        d["text_outdated"] = True   # Versand geändert → Text evtl. mit falscher Versandangabe
     d["shipping_profile"] = form["shipping_profile"]
     d["return_profile"] = form.get("return_profile") or d["return_profile"]
     d["payment_profile"] = form.get("payment_profile") or d["payment_profile"]
@@ -455,3 +460,16 @@ def check_online_bundles(active_ids: set[str]) -> None:
             sold = 0
         _update(r["id"], status="verkauft" if sold else "beendet")
         _append_log(r["id"], "verkauft 🎉" if sold else "bei eBay beendet")
+
+
+
+def _shipping_note(profile_id: str) -> str | None:
+    """Versandangabe für Claude – so, wie der Käufer sie im Angebot sieht."""
+    p = ebay_account.profile_by_id(profile_id)
+    if not p:
+        return None
+    if p["buyer_cost"]:
+        note = f"Käufer zahlt {p['buyer_cost']:.2f} € Versand".replace(".", ",")
+    else:
+        note = "kostenlos (versandkostenfrei)"
+    return note + (", Versand mit Altersprüfung (Übergabe nur an Volljährige)" if p["age_check"] else "")

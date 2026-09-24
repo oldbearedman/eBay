@@ -23,6 +23,9 @@ Regeln:
   Details aus seiner Originalbeschreibung, knapp zusammengefasst.
   Rechtliche Hinweise aus den Originalbeschreibungen (z. B. Altersfreigabe, Gewährleistung,
   Versandhinweise) übernimm einmal am Ende – wortgleich, nicht umformuliert.
+- Versand: Angaben zum Versand AUSSCHLIESSLICH aus der Zeile „Versand für den Käufer“ übernehmen. Schreibe nur
+  „versandkostenfrei“, wenn dort „kostenlos“ steht – auch wenn die Paketidee etwas anderes sagt.
+- Keine Preise in Titel oder Beschreibung (Preise können sich ändern).
 - Ton: sachlich, freundlich, Sie-Form."""
 
 SCHEMA = {
@@ -50,11 +53,13 @@ def plain_text(desc_html: str, limit: int = 2000) -> str:
     return text[:limit]
 
 
-def write_bundle_text(sources: list[dict], price: float, hint: str | None = None) -> dict:
+def write_bundle_text(sources: list[dict], price: float, hint: str | None = None,
+                      shipping_note: str | None = None) -> dict:
     """sources: [{title, condition, specifics, description}] → {title, description_html}"""
-    lines = [f"Bündelpreis: {price:.2f} €".replace(".", ","), f"Anzahl Artikel: {len(sources)}"]
+    lines = [f"Anzahl Artikel: {len(sources)}",
+             f"Versand für den Käufer: {shipping_note or 'unbekannt – keine Aussage zum Versand machen'}"]
     if hint:
-        lines.append(f"Paketidee (bitte aufgreifen, z. B. „Trilogie“, „Rätsel-Paket“): {hint}")
+        lines.append(f"Paketidee (Idee aufgreifen, z. B. „Trilogie“, „Rätsel-Paket“ – Versandangaben daraus ignorieren): {hint}")
     lines.append("")
     for i, s in enumerate(sources, 1):
         lines += [

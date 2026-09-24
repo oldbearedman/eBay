@@ -264,3 +264,13 @@ def upload_picture(data: bytes, name: str = "collage.jpg") -> str:
 def set_sku(item_id: str, sku: str) -> None:
     """Trägt eine SKU (Lagernummer) am Angebot ein – für Käufer unsichtbar."""
     call("ReviseFixedPriceItem", f"<Item><ItemID>{escape(item_id)}</ItemID><SKU>{escape(sku)}</SKU></Item>")
+
+
+def revise_text(item_id: str, title: str | None = None, description: str | None = None) -> None:
+    """Titel und/oder Beschreibung eines laufenden Angebots ändern."""
+    parts = [f"<ItemID>{escape(item_id)}</ItemID>"]
+    if title:
+        parts.append(f"<Title>{escape(title[:80])}</Title>")
+    if description:
+        parts.append(f"<Description><![CDATA[{description}]]></Description>")
+    call("ReviseFixedPriceItem", f"<Item>{''.join(parts)}</Item>")
