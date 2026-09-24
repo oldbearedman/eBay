@@ -348,7 +348,9 @@ async def links_auto():
     stats = await asyncio.to_thread(wawi.auto_link)
     return _back("/zuordnung", info=(
         f"Zugeordnet: {stats['sku']} über SKU, {stats['eindeutig']} eindeutig über den Titel, "
-        f"{stats['titel']} Vorschläge zum Prüfen, {stats['offen']} ohne Treffer."))
+        f"{stats['titel']} Vorschläge zum Prüfen, {stats['offen']} ohne Treffer."),
+        fehler=(f"{len(stats['sku_fehler'])} Angebot(e) tragen bei eBay die SKU eines anderen Artikels – "
+                "bitte unten die richtige Zuordnung bestätigen, danach wird die SKU korrigiert.") if stats["sku_fehler"] else "")
 
 
 @app.post("/zuordnung/bestaetigen")

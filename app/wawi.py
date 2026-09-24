@@ -168,10 +168,21 @@ def auto_link() -> dict:
     prods = products()
     by_item = {p["ebay_artikelnr"]: p for p in prods.values() if p["ebay_artikelnr"]}
     now = db.now_iso()
-    stats = {"sku": 0, "ebay_nr": 0, "eindeutig": 0, "titel": 0, "offen": 0}
+    stats = {"sku": 0, "ebay_nr": 0, "eindeutig": 0, "titel": 0, "offen": 0, "sku_fehler": []}
     with db.connect() as con:
-        linked = {r["item_id"]: dict(r) for r in con.execute("SELECT * FROM wawi_links")}
+        # Unbestätigte Titel-Vorschläge jedes Mal frisch berechnen (Claude-Vorschläge bleiben)
+        con.execute("DELETE FROM wawi_links WHERE confirmed = 0 AND method != 'claude'")
+        con.execute("""DELETE FROM wawi_links WHERE confirmed = 0 AND produktnr IN
+                       (SELECT produktnr FROM wawi_links WHERE confirmed = 1)""")
         listings = con.execute("SELECT item_id, sku, title FROM listings WHERE active = 1").fetchall()
+        # Dieselbe SKU bei mehreren Angeboten = Eingabefehler bei eBay → SKU-Zuordnungen dieser Angebote neu prüfen
+        sku_count = Counter(l["sku"] for l in listings if l["sku"])
+        dup_skus = {s for s, n in sku_count.items() if n > 1}
+        if dup_skus:
+            con.execute(f"""DELETE FROM wawi_links WHERE method = 'sku' AND item_id IN
+                            (SELECT item_id FROM listings WHERE sku IN ({','.join('?' * len(dup_skus))}))""",
+                        tuple(dup_skus))
+        linked = {r["item_id"]: dict(r) for r in con.execute("SELECT * FROM wawi_links")}
 
     def save(iid, pnr, method, score, ok):
         with db.connect() as con:
@@ -184,7 +195,16 @@ def auto_link() -> dict:
     for l in listings:
         if l["item_id"] in linked and linked[l["item_id"]]["confirmed"]:
             continue
-        if l["sku"] and l["sku"] in prods:
+        if l["sku"] and l["sku"] in prods and l["sku"] in dup_skus:
+            # Doppelte SKU: nur das Angebot, dessen Titel wirklich zum WaWi-Artikel passt, bekommt sie
+            same = [x for x in listings if x["sku"] == l["sku"]]
+            best = max(same, key=lambda x: _score(x["title"], prods[l["sku"]]["artikel"]))
+            if best["item_id"] == l["item_id"] and l["sku"] not in taken:
+                save(l["item_id"], l["sku"], "sku", 1.0, 1); taken.add(l["sku"]); stats["sku"] += 1
+            else:
+                stats["sku_fehler"].append(l["item_id"])
+                todo.append(l)
+        elif l["sku"] and l["sku"] in prods:
             save(l["item_id"], l["sku"], "sku", 1.0, 1); taken.add(l["sku"]); stats["sku"] += 1
         elif l["item_id"] in by_item:
             pnr = by_item[l["item_id"]]["produktnr"]
