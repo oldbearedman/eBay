@@ -122,6 +122,21 @@ def access_token() -> str:
     return t["access_token"]
 
 
+_app_token: dict = {}
+
+
+def application_token() -> str:
+    """Anwendungs-Token (ohne Nutzeranmeldung) für öffentliche Daten wie Kategorien."""
+    if _app_token.get("expires", 0) > time.time():
+        return _app_token["token"]
+    t = _token_request({
+        "grant_type": "client_credentials",
+        "scope": "https://api.ebay.com/oauth/api_scope",
+    })
+    _app_token.update(token=t["access_token"], expires=time.time() + t["expires_in"] - 120)
+    return _app_token["token"]
+
+
 def check_app_credentials() -> bool:
     """Prüft App ID + Cert ID über ein Anwendungs-Token (ohne Nutzeranmeldung)."""
     _token_request({

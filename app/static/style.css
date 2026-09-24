@@ -114,3 +114,4 @@ details { margin-bottom: 16px; } summary { cursor: pointer; color: var(--accent)
 .bundle-card .t { margin: 6px 0 4px; font-weight: 600; }
 .bundle-card p { margin: 0; }
 .empty-state { text-align: center; }
+.notes { margin: -6px 0 16px; padding-left: 18px; font-size: 13px; color: var(--muted); }

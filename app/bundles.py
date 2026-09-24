@@ -3,7 +3,7 @@ import html
 import json
 import math
 
-from . import collage, config, db, ebay_trading
+from . import collage, config, db, ebay_account, ebay_trading
 
 COLLAGE_DIR = config.DATA_DIR / "collagen"
 COLLAGE_DIR.mkdir(parents=True, exist_ok=True)
@@ -76,7 +76,12 @@ def _suggest_title(details: list[dict]) -> str:
     return title
 
 
-def _merge_specifics(details: list[dict]) -> dict[str, list[str]]:
+def _merge_specifics(details: list[dict], category_id: str) -> tuple[dict[str, list[str]], list[str]]:
+    """Merkmale aller Artikel zusammenführen – unter Beachtung der eBay-Regeln der Kategorie.
+
+    Merkmale, die nur einen Wert erlauben, aber bei den Artikeln verschieden sind,
+    werden weggelassen (bzw. bei Pflichtmerkmalen auf den ersten Wert gekürzt).
+    """
     merged: dict[str, list[str]] = {}
     for d in details:
         for name, values in d["specifics"].items():
@@ -84,7 +89,25 @@ def _merge_specifics(details: list[dict]) -> dict[str, list[str]]:
             for v in values:
                 if v not in bucket:
                     bucket.append(v)
-    return merged
+    try:
+        rules = ebay_account.category_aspects(category_id)
+    except Exception:
+        rules = {}
+    notes = []
+    for name in list(merged):
+        values = merged[name]
+        rule = rules.get(name, {"multi": False, "required": False})
+        if len(values) > 1 and not rule["multi"]:
+            if rule["required"]:
+                merged[name] = values[:1]
+                notes.append(f"„{name}“ erlaubt nur einen Wert – Pflichtfeld, daher „{values[0]}“ übernommen.")
+            else:
+                del merged[name]
+                notes.append(f"„{name}“ weggelassen (verschiedene Werte: {', '.join(values)}, eBay erlaubt nur einen).")
+    for name, rule in rules.items():
+        if rule["required"] and name not in merged:
+            notes.append(f"Pflichtmerkmal „{name}“ fehlt – bitte ergänzen.")
+    return merged, notes
 
 
 def _description(details: list[dict]) -> str:
@@ -122,6 +145,7 @@ def create_draft(item_ids: list[str]) -> int:
     worst = max(details, key=lambda d: CONDITION_RANK.index(d["condition_id"])
                 if d["condition_id"] in CONDITION_RANK else len(CONDITION_RANK))
     first = details[0]
+    specifics, notes = _merge_specifics(details, first["category_id"])
     draft = {
         "title": _suggest_title(details),
         "discount": 10,
@@ -139,7 +163,8 @@ def create_draft(item_ids: list[str]) -> int:
         "postal_code": first["postal_code"],
         "country": first["country"],
         "sku": _sku(details),
-        "specifics": _merge_specifics(details),
+        "specifics": specifics,
+        "specifics_notes": notes,
         "extra_pictures": [p for d in details for p in d["pictures"]],
     }
     now = db.now_iso()
