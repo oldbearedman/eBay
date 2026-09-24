@@ -171,3 +171,13 @@ h2.section { font-size: 17px; margin: 28px 0 12px; }
 .margin-box p { margin: 8px 0 0; }
 .bundle-form .margin-box input.porto-in { display: inline-block; width: 70px; margin: 0 4px; padding: 2px 6px; }
 .margin-line { display: flex; gap: 20px; flex-wrap: wrap; margin-bottom: 16px; font-size: 14px; }
+
+.margin-box.m-gut { border-color: var(--ok); } .margin-box.m-knapp { border-color: #c9a100; }
+.margin-box.m-abverkauf { border-color: var(--warn); } .margin-box.m-blockiert { border-color: var(--error); }
+.m-gut .total span:last-child { color: var(--ok); } .m-blockiert .total span:last-child { color: var(--error); }
+.m-abverkauf .total span:last-child { color: var(--warn); }
+.level-line { margin: 0 0 8px !important; }
+.lvl-gut { color: var(--ok); } .lvl-knapp { color: #9a7b00; } .lvl-abverkauf { color: var(--warn); } .lvl-blockiert { color: var(--error); }
+@media (prefers-color-scheme: dark) { .lvl-knapp { color: #e3c14a; } }
+.settings-form label { display: block; margin-bottom: 18px; font-weight: 600; }
+.settings-form input { display: block; margin-top: 4px; width: 140px; }

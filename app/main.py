@@ -11,7 +11,7 @@ from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, Redirect
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 
-from . import advisor, ai, bundles, config, db, ebay_account, ebay_auth, ebay_trading, market, sync, wawi
+from . import advisor, ai, bundles, config, db, ebay_account, ebay_auth, ebay_trading, market, settings, sync, wawi
 
 log = logging.getLogger("ebay-manager")
 templates = Jinja2Templates(directory=config.BASE_DIR / "app" / "templates")
@@ -241,6 +241,8 @@ def market_detail(request: Request, item_id: str, info: str = "", fehler: str = 
         calc = {"now": wawi.profit(listing["price"], w["ek"], w["fee_rate"], ship)}
         if m and m.get("suggestion"):
             calc["suggestion"] = wawi.profit(m["suggestion"], w["ek"], w["fee_rate"], ship)
+        if wawi.slow_items([item_id]):
+            calc["floor"] = wawi.min_price(w["ek"], w["fee_rate"], ship, -settings.get("max_loss_per_bundle"))
     return templates.TemplateResponse(request, "market.html", {
         "l": dict(listing), "m": m, "w": w, "calc": calc, "info": info, "fehler": fehler,
     })
@@ -345,3 +347,21 @@ async def links_confirm(request: Request):
         if pnr:
             wawi.link(iid, pnr)
     return _back("/zuordnung", info=f"{len(chosen)} Zuordnungen bestätigt.")
+
+
+# ── Einstellungen ───────────────────────────────────────────────────────
+
+@app.get("/einstellungen", response_class=HTMLResponse)
+def settings_page(request: Request, info: str = ""):
+    return templates.TemplateResponse(request, "settings.html", {
+        "values": settings.all_values(), "labels": settings.LABELS, "info": info,
+    })
+
+
+@app.post("/einstellungen")
+async def settings_save(request: Request):
+    form = await request.form()
+    for key in settings.DEFAULTS:
+        if form.get(key):
+            settings.set_value(key, float(str(form[key]).replace(",", ".")))
+    return _back("/einstellungen", info="Gespeichert.")

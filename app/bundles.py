@@ -297,10 +297,12 @@ def publish(bundle_id: int) -> dict:
     if b["status"] != "entwurf":
         raise ValueError("Dieses Bündel ist kein Entwurf mehr.")
     m = wawi.bundle_margin([it["item_id"] for it in b["items"]], b["draft"]["price"], b["draft"].get("porto"))
-    if m.get("complete") and not m["ok"] and not b["draft"].get("allow_below_min"):
+    if m.get("complete") and not m["allowed"] and not b["draft"].get("allow_below_min"):
         raise ValueError(
-            f"Der Preis liegt unter deinem Mindestpreis von {m['min_price']:.2f} € (Gewinn nur {m['profit']:.2f} €). "
+            f"Zu viel Minus: Gewinn {m['profit']:.2f} € – unterste Grenze für dieses Bündel ist {m['floor_price']:.2f} €. "
             "Preis anheben oder „Trotzdem einstellen“ anhaken.".replace(".", ","))
+    if m.get("complete") and m["level"] == "abverkauf":
+        _append_log(bundle_id, f"Abverkauf: Ladenhüter-Bündel mit {m['profit']:.2f} € Ergebnis")
 
     # 1. Sind alle Einzelartikel noch verfügbar?
     for it in b["items"]:

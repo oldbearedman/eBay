@@ -51,9 +51,9 @@
       </ul>
       {% set mg = b.marge %}
       {% if mg and mg.complete %}
-        <p class="small {% if mg.ok %}ok{% else %}error{% endif %}">
-          Gewinn {{ "%.2f"|format(mg.profit)|replace(".", ",") }} € · Mindestpreis {{ "%.2f"|format(mg.min_price)|replace(".", ",") }} €
-          {% if not mg.ok %} – <strong>unter deinem Mindestpreis!</strong>{% endif %}
+        <p class="small lvl-{{ mg.level }}">
+          {{ {"gut": "🟢", "knapp": "🟡", "abverkauf": "🟠 Abverkauf ·", "blockiert": "🔴 Zu viel Minus ·"}[mg.level] }}
+          Gewinn {{ "%.2f"|format(mg.profit)|replace(".", ",") }} € · Ziel ab {{ "%.2f"|format(mg.min_price)|replace(".", ",") }} € · Grenze {{ "%.2f"|format(mg.floor_price)|replace(".", ",") }} €
           {% if mg.porto_saved > 0 %}<span class="muted"> · {{ "%.2f"|format(mg.porto_saved)|replace(".", ",") }} € Porto gespart</span>{% endif %}
         </p>
       {% elif mg %}<p class="muted small">Marge unbekannt ({{ mg.missing|length }} Artikel ohne WaWi-Zuordnung)</p>{% endif %}

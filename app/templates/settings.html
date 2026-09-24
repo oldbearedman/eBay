@@ -1,0 +1,24 @@
+{% extends "base.html" %}
+{% block title %}Regeln · eBay Manager{% endblock %}
+{% block content %}
+{% if info %}<p class="banner ok">{{ info }}</p>{% endif %}
+<section class="card narrow">
+  <h1>Gewinn-Regeln</h1>
+  <p class="muted">Gelten für den Bündel-Editor, die Vorschläge von Claude und die Marktseite.</p>
+  <ul class="small">
+    <li>🟢 <strong>Gut</strong> – mindestens der Ziel-Gewinn je Artikel</li>
+    <li>🟡 <strong>Knapp</strong> – Gewinn zwischen 0 € und dem Ziel</li>
+    <li>🟠 <strong>Abverkauf</strong> – kleines Minus bis zur Grenze, nur wenn die meisten Artikel Ladenhüter sind</li>
+    <li>🔴 <strong>Blockiert</strong> – mehr Minus; Einstellen nur mit ausdrücklichem Haken</li>
+  </ul>
+  <form method="post" class="settings-form">
+    {% for key, (label, help) in labels.items() %}
+      <label>{{ label }}
+        <input name="{{ key }}" value="{{ ('%g' % values[key])|replace('.', ',') }}" inputmode="decimal">
+        <span class="muted small" style="font-weight:400">{{ help }}</span>
+      </label>
+    {% endfor %}
+    <button class="btn">Speichern</button>
+  </form>
+</section>
+{% endblock %}

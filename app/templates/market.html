@@ -33,7 +33,8 @@
   {% if calc.suggestion %}<span>beim Vorschlag: <strong class="{% if calc.suggestion.profit < 1 %}error{% else %}ok{% endif %}">{{ "%.2f"|format(calc.suggestion.profit)|replace(".", ",") }} €</strong></span>{% endif %}
 </div>
 {% if m.suggestion and m.suggestion < w.min_vk %}
-<p class="banner error">Achtung: Der Marktpreis liegt unter deinem Mindestpreis ({{ "%.2f"|format(w.min_vk)|replace(".", ",") }} €). Statt den Preis zu senken, eher bündeln.</p>
+<p class="banner error">Achtung: Der Marktpreis liegt unter deinem Mindestpreis ({{ "%.2f"|format(w.min_vk)|replace(".", ",") }} €). Besser bündeln als einzeln senken.
+  {% if calc.floor %}Weil der Artikel ein Ladenhüter ist, wäre ein Abverkauf bis {{ "%.2f"|format(calc.floor)|replace(".", ",") }} € vertretbar (kleines Minus laut deinen Regeln).{% endif %}</p>
 {% endif %}
 {% endif %}
 

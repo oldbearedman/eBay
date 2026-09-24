@@ -5,7 +5,7 @@ set -euo pipefail
 HOST="papa@192.168.178.33"
 SSH=(ssh -o IdentitiesOnly=yes -i ~/.ssh/familienserver_ed25519 "$HOST")
 
-git ls-files | tar -czf - -T - | "${SSH[@]}" 'mkdir -p ~/ebay-manager && tar -xzf - -C ~/ebay-manager'
+git ls-files -co --exclude-standard | tar -czf - -T - | "${SSH[@]}" 'mkdir -p ~/ebay-manager && tar -xzf - -C ~/ebay-manager'
 "${SSH[@]}" 'set -e
   cd ~/ebay-manager
   [ -d .venv ] || python3 -m venv .venv

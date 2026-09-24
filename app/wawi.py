@@ -9,7 +9,7 @@ import os
 import re
 import sqlite3
 
-from . import db
+from . import db, settings
 
 WAWI_DB = os.getenv("WAWI_DB", "/home/papa/warenwirtschaft/warenwirtschaft.db")
 
@@ -205,12 +205,44 @@ def bundle_margin(item_ids: list[str], price: float, shipping_cost: float | None
     rate = max(p["fee_rate"] for p in data.values())
     single_shipping = sum(p["versand_kosten"] for p in data.values())
     ship = shipping_cost if shipping_cost is not None else max(p["versand_kosten"] for p in data.values())
-    target = TARGET_PROFIT * len(item_ids)
+    target = settings.get("min_profit_per_item") * len(item_ids)
+    max_loss = settings.get("max_loss_per_bundle")
+    slow = slow_items(item_ids)
+    is_slow = len(slow) * 2 >= len(item_ids)  # mind. die Hälfte sind Ladenhüter
     res = profit(price, ek, rate, ship)
+    p = res["profit"] + 1e-6
+    # Ampel: gut → knapp → abverkauf (nur Ladenhüter, kleines Minus) → blockiert
+    if p >= target:
+        level = "gut"
+    elif p >= 0:
+        level = "knapp"
+    elif p >= -max_loss and is_slow:
+        level = "abverkauf"
+    else:
+        level = "blockiert"
     res.update(
         complete=True, target=target, min_price=min_price(ek, rate, ship, target),
+        floor_price=min_price(ek, rate, ship, -max_loss if is_slow else 0.0),
         porto_saved=round(single_shipping - ship, 2), fee_rate=rate,
         sum_min_vk=round(sum(p["min_vk"] for p in data.values()), 2),
+        level=level, slow_count=len(slow), is_slow=is_slow, max_loss=max_loss,
     )
-    res["ok"] = res["profit"] + 1e-6 >= target
+    res["ok"] = level == "gut"
+    res["allowed"] = level != "blockiert"
     return res
+
+
+def slow_items(item_ids: list[str]) -> list[str]:
+    """Ladenhüter: lange online und höchstens 1 Beobachter."""
+    from datetime import datetime, timezone
+    days = settings.get("slow_days")
+    now = datetime.now(timezone.utc)
+    out = []
+    with db.connect() as con:
+        for iid in item_ids:
+            r = con.execute("SELECT start_time, watch_count FROM listings WHERE item_id = ?", (iid,)).fetchone()
+            if r and r["start_time"] and r["watch_count"] <= 1:
+                age = (now - datetime.fromisoformat(r["start_time"].replace("Z", "+00:00"))).days
+                if age >= days:
+                    out.append(iid)
+    return out

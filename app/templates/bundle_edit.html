@@ -60,7 +60,9 @@
     </div>
 
     {% if margin.complete %}
-    <div class="margin-box {% if margin.ok %}m-ok{% else %}m-bad{% endif %}">
+    <div class="margin-box m-{{ margin.level }}">
+      <p class="level-line"><strong>{{ {"gut": "🟢 Gut", "knapp": "🟡 Knapp – kleiner Gewinn", "abverkauf": "🟠 Abverkauf – kleines Minus, erlaubt für Ladenhüter", "blockiert": "🔴 Zu viel Minus"}[margin.level] }}</strong>
+        <span class="muted small">· {{ margin.slow_count }} von {{ b["items"]|length }} Artikeln sind Ladenhüter</span></p>
       <div class="mrow"><span>Bündelpreis</span><span>{{ "%.2f"|format(margin.price)|replace(".", ",") }} €</span></div>
       <div class="mrow"><span>− Einkaufspreise (WaWi)</span><span>{{ "%.2f"|format(margin.ek)|replace(".", ",") }} €</span></div>
       <div class="mrow"><span>− eBay-Gebühr ({{ (margin.fee_rate * 100)|round|int }} % + fix)</span><span>{{ "%.2f"|format(margin.fee)|replace(".", ",") }} €</span></div>
@@ -70,13 +72,15 @@
         <span>{{ "%.2f"|format(margin.shipping)|replace(".", ",") }} €</span></div>
       <div class="mrow total"><span>= Gewinn</span><span>{{ "%.2f"|format(margin.profit)|replace(".", ",") }} €</span></div>
       <p class="small">
-        Mindestpreis fürs Bündel: <strong>{{ "%.2f"|format(margin.min_price)|replace(".", ",") }} €</strong>
-        (mind. {{ "%.2f"|format(margin.target)|replace(".", ",") }} € Gewinn, 1 € je Artikel) ·
+        Zielpreis: <strong>{{ "%.2f"|format(margin.min_price)|replace(".", ",") }} €</strong>
+        ({{ "%.2f"|format(margin.target)|replace(".", ",") }} € Gewinn) · unterste Grenze:
+        <strong>{{ "%.2f"|format(margin.floor_price)|replace(".", ",") }} €</strong>
+        {% if margin.is_slow %}(bis {{ "%.2f"|format(margin.max_loss)|replace(".", ",") }} € Minus, Ladenhüter){% else %}(± 0){% endif %} ·
         einzeln wären es mind. {{ "%.2f"|format(margin.sum_min_vk)|replace(".", ",") }} €
         {% if margin.porto_saved > 0 %} · <span class="ok">{{ "%.2f"|format(margin.porto_saved)|replace(".", ",") }} € Porto gespart</span>{% endif %}
       </p>
-      {% if not margin.ok %}
-        <label class="inline small"><input type="checkbox" name="allow_below_min" {% if d.get("allow_below_min") %}checked{% endif %}> Trotzdem einstellen (unter Mindestpreis)</label>
+      {% if not margin.allowed %}
+        <label class="inline small"><input type="checkbox" name="allow_below_min" {% if d.get("allow_below_min") %}checked{% endif %}> Trotzdem einstellen (mehr Minus als erlaubt)</label>
       {% endif %}
       <p class="muted small">Nach Preis- oder Portoänderung „Speichern“, um neu zu rechnen.</p>
     </div>
