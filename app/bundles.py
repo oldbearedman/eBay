@@ -1,9 +1,12 @@
 """Bündel: mehrere Angebote zu einem Kombi-Angebot zusammenfassen."""
 import html
 import json
+import logging
 import math
 
-from . import collage, config, db, ebay_account, ebay_trading
+from . import ai, collage, config, db, ebay_account, ebay_trading
+
+log = logging.getLogger("ebay-manager")
 
 COLLAGE_DIR = config.DATA_DIR / "collagen"
 COLLAGE_DIR.mkdir(parents=True, exist_ok=True)
@@ -169,7 +172,19 @@ def create_draft(item_ids: list[str]) -> int:
         "specifics": specifics,
         "specifics_notes": notes,
         "extra_pictures": [p for d in details for p in d["pictures"]],
+        "sources": [
+            {"title": d["title"], "condition": d["condition_name"] or "",
+             "specifics": d["specifics"], "description": ai.plain_text(d["description"])}
+            for d in details
+        ],
+        "text_by": "vorlage",
     }
+    if ai.enabled():
+        try:
+            draft.update(ai.write_bundle_text(draft["sources"], draft["price"]), text_by="claude")
+        except Exception as exc:
+            log.exception("Claude-Text fehlgeschlagen")
+            draft["ai_error"] = str(exc)[:300]
     now = db.now_iso()
     with db.connect() as con:
         cur = con.execute(
@@ -187,6 +202,15 @@ def create_draft(item_ids: list[str]) -> int:
     img = collage.build([d["pictures"][0] if d["pictures"] else d["image_url"] for d in details])
     (COLLAGE_DIR / f"{bundle_id}.jpg").write_bytes(img)
     return bundle_id
+
+
+def rewrite_text(bundle_id: int) -> None:
+    """Titel und Beschreibung neu von Claude schreiben lassen."""
+    b = get(bundle_id)
+    d = b["draft"]
+    d.update(ai.write_bundle_text(d["sources"], d["price"]), text_by="claude")
+    d.pop("ai_error", None)
+    _update(bundle_id, draft=json.dumps(d, ensure_ascii=False))
 
 
 def get(bundle_id: int) -> dict | None:

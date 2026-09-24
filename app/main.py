@@ -11,7 +11,7 @@ from fastapi.responses import FileResponse, HTMLResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 
-from . import bundles, config, db, ebay_account, ebay_auth, sync
+from . import ai, bundles, config, db, ebay_account, ebay_auth, sync
 
 log = logging.getLogger("ebay-manager")
 templates = Jinja2Templates(directory=config.BASE_DIR / "app" / "templates")
@@ -146,7 +146,7 @@ def bundle_edit(request: Request, bundle_id: int, info: str = "", fehler: str = 
     return templates.TemplateResponse(request, "bundle_edit.html", {
         "b": b, "d": b["draft"], "profiles": profiles,
         "specifics_text": bundles.format_specifics(b["draft"]["specifics"]),
-        "info": info, "fehler": fehler, "pruefung": pruefung,
+        "info": info, "fehler": fehler, "pruefung": pruefung, "ai_enabled": ai.enabled(),
     })
 
 
@@ -173,6 +173,9 @@ async def bundle_action(request: Request, bundle_id: int):
             return _back(url, info="Bündel aufgelöst, Einzelartikel sind wieder online.",
                          fehler=" · ".join(problems))
         bundles.save_draft(bundle_id, dict(form))
+        if action == "ki":
+            await asyncio.to_thread(bundles.rewrite_text, bundle_id)
+            return _back(url, info="Claude hat Titel und Beschreibung neu geschrieben.")
         if action == "pruefen":
             res = await asyncio.to_thread(bundles.verify, bundle_id)
             fees = sum(a for _, a in res["fees"])

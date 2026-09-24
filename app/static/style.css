@@ -115,3 +115,5 @@ details { margin-bottom: 16px; } summary { cursor: pointer; color: var(--accent)
 .bundle-card p { margin: 0; }
 .empty-state { text-align: center; }
 .notes { margin: -6px 0 16px; padding-left: 18px; font-size: 13px; color: var(--muted); }
+.text-source { display: flex; align-items: center; justify-content: space-between; gap: 8px; flex-wrap: wrap; margin-bottom: 12px; }
+.small-btn { padding: 5px 10px; font-size: 13px; }
