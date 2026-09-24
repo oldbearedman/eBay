@@ -64,12 +64,12 @@ def save(m: dict) -> None:
             {**m, "updated_at": db.now_iso()})
 
 
-def refresh_missing() -> int:
-    """Steckbriefe für aktive Angebote nachladen, die noch keinen haben."""
+def refresh_missing(force: bool = False) -> int:
+    """Steckbriefe für aktive Angebote nachladen – fehlende bzw. veraltete (ohne USK-Feld), mit force alle."""
     with db.connect() as con:
         ids = [r["item_id"] for r in con.execute(
             """SELECT l.item_id FROM listings l LEFT JOIN item_meta m USING(item_id)
-               WHERE l.active = 1 AND m.item_id IS NULL""")]
+               WHERE l.active = 1 AND (m.item_id IS NULL OR m.updated_at < '2026-09-25' OR ?)""", (int(force),))]
     for iid in ids:
         try:
             save(from_details(ebay_trading.item_details(iid)))
