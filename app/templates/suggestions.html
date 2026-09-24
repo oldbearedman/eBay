@@ -43,7 +43,9 @@
         </div>
         <div class="sg-price">
           <span class="num">{{ "%.2f"|format(b.preis)|replace(".", ",") }} €</span>
-          <span class="muted small">einzeln {{ "%.2f"|format(b.summe_einzeln)|replace(".", ",") }} €</span>
+          {% set einzeln = (b.pruefung.summe_einzelpreise_inkl_versand if b.pruefung and b.pruefung.summe_einzelpreise_inkl_versand else b.summe_einzeln) %}
+          <span class="muted small">einzeln {{ "%.2f"|format(einzeln)|replace(".", ",") }} € inkl. Versand</span>
+          {% if b.pruefung and b.pruefung.gewinn is not none and b.pruefung.gewinn is defined %}<span class="small ok">Gewinn {{ "%.2f"|format(b.pruefung.gewinn)|replace(".", ",") }} €</span>{% endif %}
           {% if b.pruefung and b.pruefung.anteil_marktwert_prozent %}<span class="muted small">{{ b.pruefung.anteil_marktwert_prozent }} % vom Marktwert</span>{% endif %}
         </div>
       </div>
