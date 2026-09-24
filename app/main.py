@@ -294,11 +294,25 @@ def suggestions(request: Request, fehler: str = ""):
     fixed = [l for l in listings.values() if l["listing_type"] == "FixedPriceItem"]
     checks = market.all_checks()
     a = advisor.latest()
+    open_bundles, done_bundles = [], []
     if a and a.get("result"):
-        for b in a["result"]["buendel"]:  # Marge immer mit aktuellen WaWi-Daten
-            b["marge"] = wawi.bundle_margin(b["item_ids"], b["preis"])
+        made = [x for x in bundles.all_bundles() if x["status"] != "aufgeloest"]
+        for b in a["result"]["buendel"]:
+            ids = set(b["item_ids"])
+            # Umgesetzt? → ein Bündel (Entwurf/online/verkauft) enthält alle Artikel dieses Vorschlags
+            match = next((x for x in made if ids <= {it["item_id"] for it in x["items"]}), None)
+            gone = [i for i in b["item_ids"] if i not in listings]
+            if match:
+                b["done"] = {"kind": "bundle", "id": match["id"], "status": match["status"]}
+            elif gone:
+                b["done"] = {"kind": "gone", "n": len(gone)}
+            else:
+                b["done"] = None
+                b["marge"] = wawi.bundle_margin(b["item_ids"], b["preis"])  # Marge mit aktuellen WaWi-Daten
+            (done_bundles if b["done"] else open_bundles).append(b)
     return templates.TemplateResponse(request, "suggestions.html", {
         "reviews": review.all_reviews(), "review_key": review.key,
+        "open_bundles": open_bundles, "done_bundles": done_bundles,
         "a": a, "running": advisor.state["running"], "step": advisor.state.get("step", ""), "listings": listings,
         "ai_enabled": ai.enabled(), "fehler": fehler,
         "total": len(fixed), "checked": sum(1 for l in fixed if l["item_id"] in checks),

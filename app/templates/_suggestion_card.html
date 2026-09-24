@@ -1,0 +1,85 @@
+    {% set rv = reviews.get(review_key(b.item_ids)) %}
+    <div class="card suggestion-wrap">
+    <form class="suggestion" method="post" action="/buendel">
+      <div class="sg-head">
+        <div>
+          <span class="status prio-{{ b.prioritaet }}">{{ prio[b.prioritaet] }}</span>
+          {% if b.typ %}<span class="status typ">{{ {"reihe": "📚 Spielreihe", "franchise": "🌌 Franchise", "thema": "🎯 Themen-Paket", "zugpferd": "🐎 Zugpferd", "sonstiges": "🧩 Sonstiges"}.get(b.typ, b.typ) }}</span>{% endif %}
+          {% if b.plattform %}<span class="status typ">{{ b.plattform }}</span>{% endif %}
+          <h3>{{ b.name }}</h3>
+          {% if b.verkaufsargument %}<p class="pitch">„{{ b.verkaufsargument }}“</p>{% endif %}
+        </div>
+        <div class="sg-price">
+          <span class="num">{{ "%.2f"|format(b.preis)|replace(".", ",") }} €</span>
+          <span class="muted small">gesamt inkl. Versand</span>
+          {% set einzeln = (b.pruefung.summe_einzelpreise_inkl_versand if b.pruefung and b.pruefung.summe_einzelpreise_inkl_versand else b.summe_einzeln) %}
+          <span class="muted small">einzeln {{ "%.2f"|format(einzeln)|replace(".", ",") }} € inkl. Versand</span>
+          {% if b.pruefung and b.pruefung.gewinn is not none and b.pruefung.gewinn is defined %}<span class="small ok">Gewinn {{ "%.2f"|format(b.pruefung.gewinn)|replace(".", ",") }} €</span>{% endif %}
+          {% if b.pruefung and b.pruefung.anteil_marktwert_prozent %}<span class="muted small">{{ b.pruefung.anteil_marktwert_prozent }} % vom Marktwert</span>{% endif %}
+        </div>
+      </div>
+      <ul class="sg-items">
+        {% for iid in b.item_ids %}{% set l = listings.get(iid) %}
+          <li>{% if l and l.image_url %}<img src="{{ l.image_url }}" alt="" loading="lazy">{% endif %}
+            <span>{{ l.title if l else iid }}{% if l %} <span class="muted small">· {{ "%.2f"|format(l.price)|replace(".", ",") }} €</span>{% endif %}</span>
+            <input type="hidden" name="ids" value="{{ iid }}"></li>
+        {% endfor %}
+      </ul>
+      {% set mg = b.marge %}
+      {% if mg and mg.complete %}
+        <p class="small lvl-{{ mg.level }}">
+          {{ {"gut": "🟢", "knapp": "🟡", "abverkauf": "🟠 Abverkauf ·", "blockiert": "🔴 Zu viel Minus ·"}[mg.level] }}
+          Gewinn {{ "%.2f"|format(mg.profit)|replace(".", ",") }} € · Ziel ab {{ "%.2f"|format(mg.min_price)|replace(".", ",") }} € · Grenze {{ "%.2f"|format(mg.floor_price)|replace(".", ",") }} €
+          {% if mg.porto_saved > 0 %}<span class="muted"> · {{ "%.2f"|format(mg.porto_saved)|replace(".", ",") }} € Porto gespart</span>{% endif %}
+        </p>
+      {% elif mg %}<p class="muted small">Marge unbekannt ({{ mg.missing|length }} Artikel ohne WaWi-Zuordnung)</p>{% endif %}
+      {% if b.pruefung and b.pruefung.probleme %}<p class="small warn">⚠️ {{ b.pruefung.probleme|join(" · ") }}</p>{% endif %}
+      <p><strong>Warum:</strong> {{ b.begruendung }}</p>
+      <p><strong>Strategie:</strong> {{ b.strategie }}</p>
+      <input type="hidden" name="preis" value="{{ b.preis }}">
+      <input type="hidden" name="hinweis" value="{{ b.name }}{% if b.verkaufsargument %} – {{ b.verkaufsargument }}{% endif %}">
+      {% if b.done %}
+        {% if b.done.kind == "bundle" %}<p class="done-note ok">✅ Umgesetzt – <a href="/buendel/{{ b.done.id }}">Bündel #{{ b.done.id }}</a> ist {{ {"online": "online", "entwurf": "als Entwurf angelegt", "verkauft": "verkauft 🎉", "beendet": "beendet"}.get(b.done.status, b.done.status) }}</p>
+        {% else %}<p class="done-note warn">Nicht mehr möglich – {{ b.done.n }} Artikel davon {{ "ist" if b.done.n == 1 else "sind" }} nicht mehr aktiv (verkauft oder in einem anderen Bündel).</p>{% endif %}
+      {% else %}
+        <div class="sg-actions">
+          <button class="btn">Als Bündel-Entwurf anlegen</button>
+          <button type="button" class="btn secondary review-btn" data-name="{{ b.name }}">🔍 {% if rv %}Erneut{% else %}Nochmal genau{% endif %} prüfen</button>
+        </div>
+      {% endif %}
+    </form>
+
+    {% if rv and not b.done %}
+    <div class="review verdict-{{ rv.urteil }}">
+      <p class="review-head"><strong>{{ {"buendeln": "✅ Bündeln lohnt sich", "anpassen": "🔧 Bündeln – aber anpassen", "einzeln_lassen": "✋ Lieber einzeln lassen"}[rv.urteil] }}</strong>
+        <span class="muted small">· Risiko {{ rv.risiko }} · geprüft {{ rv.created_at[:16]|replace("T", " ") }}</span></p>
+      <p>{{ rv.fazit }}</p>
+      <div class="two">
+        <div><strong class="ok">Pro</strong><ul class="small">{% for x in rv.pro %}<li>{{ x }}</li>{% endfor %}</ul></div>
+        <div><strong class="error">Contra</strong><ul class="small">{% for x in rv.contra %}<li>{{ x }}</li>{% endfor %}</ul></div>
+      </div>
+      <div class="table-scroll"><table class="listings review-items"><tbody>
+      {% for e in rv.einzelartikel %}
+        <tr>
+          <td class="small">{{ rv.titel.get(e.item_id, e.item_id)[:60] }}</td>
+          <td class="small nowrap">{{ {"im_paket": "📦 ins Paket", "hinzufuegen": "➕ dazunehmen", "lassen": "👍 so lassen", "anheben": "⬆️ anheben", "senken": "⬇️ senken"}[e.empfehlung] }}
+            {% if e.preis and e.empfehlung in ("anheben", "senken") %}auf <strong>{{ "%.2f"|format(e.preis)|replace(".", ",") }} €</strong>
+              <span class="muted">(jetzt {{ "%.2f"|format(rv.preis_jetzt.get(e.item_id, 0))|replace(".", ",") }} €)</span>{% endif %}</td>
+          <td class="small muted">{{ e.grund }}</td>
+          <td class="nowrap">{% if e.empfehlung in ("anheben", "senken") %}<a class="icon-btn" href="/markt/{{ e.item_id }}">Preis ändern</a>{% endif %}</td>
+        </tr>
+      {% endfor %}
+      </tbody></table></div>
+      {% if rv.urteil != "einzeln_lassen" and rv.empfohlener_preis %}
+      <form method="post" action="/buendel" class="review-apply">
+        {% for i in rv.empfohlene_item_ids %}<input type="hidden" name="ids" value="{{ i }}">{% endfor %}
+        <input type="hidden" name="preis" value="{{ rv.empfohlener_preis }}">
+        <input type="hidden" name="hinweis" value="{{ b.name }}{% if b.verkaufsargument %} – {{ b.verkaufsargument }}{% endif %}">
+        <span>{% if rv.hinzugefuegt %}<span class="status typ">➕ {{ rv.hinzugefuegt|length }} Artikel dazugenommen</span> {% endif %}Empfehlung: <strong>{{ rv.empfohlene_item_ids|length }} Artikel für {{ "%.2f"|format(rv.empfohlener_preis)|replace(".", ",") }} €</strong>
+          {% if rv.pruefung and rv.pruefung.gewinn is defined %}<span class="small ok"> · Gewinn {{ "%.2f"|format(rv.pruefung.gewinn)|replace(".", ",") }} €</span>{% endif %}</span>
+        <button class="btn">So als Entwurf anlegen</button>
+      </form>
+      {% endif %}
+    </div>
+    {% endif %}
+    </div>
