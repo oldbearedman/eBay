@@ -72,8 +72,9 @@ PREIS – nicht verschenken, aber verkaufbar:
 - Unter 75 % des Ankers nur beim Abverkauf echter Ladenhüter.
 - Ein Paket braucht nur EIN Porto – dieser Vorteil erlaubt einen attraktiven Preis bei gutem Gewinn.
 - Versand: Paketpreise sind Gesamtpreise (kostenloser Versand für den Käufer). Das Werkzeug rechnet die eigenen
-  Portokosten nach Staffel (Kleinpaket bis 5 Artikel und 25 € Warenwert, darüber Paket; Ü18 immer über
-  „Alter“ KP mit Altersprüfung). Ein Paket knapp über 25 € kostet also spürbar mehr Porto – das beim Preis bedenken.
+  Portokosten nach Staffel: 1 Spiel bis 10 € → 1,80 €; 2 Spiele bis 14 € → 2,70 € (nicht Ü18);
+  bis 5 Artikel und 25 € → Kleinpaket 3,39 €; darüber → DHL-Paket 6,99 €. Ü18 immer über „Alter“ KP
+  (Altersprüfung). Ein Paket knapp über einer Wertgrenze kostet spürbar mehr Porto – beim Preis bedenken.
 - Gewinn-Ampel (Ergebnis nach EK, Gebühren, Porto, Differenzsteuer):
   🟢 gut: mindestens {ZIEL} € Gewinn je Artikel – der Normalfall, der Händler will vorankommen.
   🟡 knapp: 0 € bis Ziel – nur, wenn der Markt nicht mehr hergibt.

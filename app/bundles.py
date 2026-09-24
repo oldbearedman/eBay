@@ -169,10 +169,16 @@ def create_draft(item_ids: list[str], price: float | None = None, hint: str | No
             age = sorted((p for p in fast if p["age_check"]), key=lambda p: p["buyer_cost"])
             if age:
                 cur = age[0]
-        elif kind.startswith("Paket"):
+        elif "Paket" in kind:
             free = [p for p in fast if p["buyer_cost"] == 0 and "paket" in p["service"].lower() and not p["age_check"]]
             if free:
                 cur = free[0]
+        elif kind in ("1 Spiel", "2 Spiele"):
+            # Brief-Versand: Profil des ersten Artikels behalten, falls es ein Brief ist, sonst ein Brief-Profil
+            if not (cur and "brief" in cur["service"].lower()):
+                brief = [p for p in fast if "brief" in p["service"].lower() and not p["age_check"]]
+                if brief:
+                    cur = brief[0]
         elif len(details) >= 2 and cur and (cur.get("own_cost") or 0) < settings.get("porto_kp"):
             # Kleinpaket-Profil: Versandart kostet mind. Kleinpaket-Porto, aber weniger als ein Paket
             kp = sorted((p for p in fast if not p["age_check"]

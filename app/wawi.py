@@ -132,14 +132,17 @@ def is_usk18(item_ids: list[str]) -> bool:
 def porto_rule(n: int, value: float, usk18: bool) -> tuple[float, str]:
     """Eigene Portokosten nach Stückzahl und Warenwert → (Kosten, Beschreibung).
 
-    Ü18: immer „Alter“ KP (für den Käufer kostenlos). 1 Spiel bis Wert X → Einzelporto,
-    bis max. N Artikel und Wert Y → Kleinpaket, darüber → Paket (kostenlos, im Preis enthalten).
+    Erste passende Stufe: 1 Spiel bis Wert X → Einzelporto; (nicht Ü18) 2 Spiele bis Wert Z → Zweier-Porto;
+    bis max. N Artikel und Wert Y → Kleinpaket; darüber → Paket (kostenlos, im Preis enthalten).
+    Ü18 geht immer über „Alter“ KP (für den Käufer kostenlos).
     """
-    if usk18 and n == 1 and value <= settings.get("limit_einzeln_alter"):
-        return settings.get("porto_einzeln_alter"), "1 Ü18-Spiel über „Alter“ KP"
+    if n == 1 and value <= settings.get("limit_einzeln"):
+        return settings.get("porto_einzeln"), ("1 Spiel über „Alter“ KP" if usk18 else "1 Spiel")
+    if not usk18 and n <= 2 and value <= settings.get("limit_zwei"):
+        return settings.get("porto_zwei"), "2 Spiele"
     if n <= settings.get("max_kp_artikel") and value <= settings.get("limit_kp"):
         return settings.get("porto_kp"), ("Kleinpaket über „Alter“ KP" if usk18 else "Kleinpaket")
-    return settings.get("porto_paket"), "Paket (kostenlos für den Käufer)"
+    return settings.get("porto_paket"), ("Paket über „Alter“ KP" if usk18 else "DHL-Paket (kostenlos für den Käufer)")
 
 
 # ── WaWi lesen ──────────────────────────────────────────────────────────
