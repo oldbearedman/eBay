@@ -18,6 +18,7 @@ CREATE TABLE IF NOT EXISTS item_meta (
     genre      TEXT,
     publisher  TEXT,
     complete   TEXT,          -- cib | teil | NULL
+    usk        TEXT,
     condition  TEXT,
     category   TEXT,
     updated_at TEXT NOT NULL
@@ -33,6 +34,8 @@ SERIES_STOP = {"the", "der", "die", "das", "a", "an", "of", "und", "and", "editi
 def init() -> None:
     with db.connect() as con:
         con.executescript(SCHEMA)
+        if "usk" not in {r["name"] for r in con.execute("PRAGMA table_info(item_meta)")}:
+            con.execute("ALTER TABLE item_meta ADD COLUMN usk TEXT")
 
 
 def from_details(d: dict) -> dict:
@@ -48,6 +51,7 @@ def from_details(d: dict) -> dict:
         "genre": ", ".join(spec.get("Genre") or []) or None,
         "publisher": (spec.get("Herausgeber") or spec.get("Marke") or [None])[0],
         "complete": market.completeness(d["title"]),
+        "usk": ", ".join(spec.get("USK-Einstufung") or []) or None,
         "condition": d.get("condition_name"), "category": d.get("category_name"),
     }
 
@@ -55,8 +59,8 @@ def from_details(d: dict) -> dict:
 def save(m: dict) -> None:
     with db.connect() as con:
         con.execute(
-            """INSERT OR REPLACE INTO item_meta(item_id, platform, name, genre, publisher, complete, condition, category, updated_at)
-               VALUES (:item_id, :platform, :name, :genre, :publisher, :complete, :condition, :category, :updated_at)""",
+            """INSERT OR REPLACE INTO item_meta(item_id, platform, name, genre, publisher, complete, usk, condition, category, updated_at)
+               VALUES (:item_id, :platform, :name, :genre, :publisher, :complete, :usk, :condition, :category, :updated_at)""",
             {**m, "updated_at": db.now_iso()})
 
 

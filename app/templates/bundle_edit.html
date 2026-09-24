@@ -75,8 +75,9 @@
       <div class="mrow"><span>− eBay-Gebühr ({{ (margin.fee_rate * 100)|round|int }} % + fix)</span><span>{{ "%.2f"|format(margin.fee)|replace(".", ",") }} €</span></div>
       {% if margin.mixed_tax %}<p class="small error"><strong>⚠️ Steuerarten gemischt:</strong> § 25a- und regelbesteuerte Artikel gehören nicht in ein Paket (Rechnung müsste aufgeteilt werden). Einstellen nur mit Haken.</p>{% endif %}
       <div class="mrow"><span>− Umsatzsteuer ({{ margin.tax_label }})</span><span>{{ "%.2f"|format(margin.tax)|replace(".", ",") }} €</span></div>
-      <div class="mrow"><span>− Porto
-        <input name="porto" class="porto-in" value="{{ '%.2f'|format(margin.shipping) }}" inputmode="decimal" aria-label="Porto für das Bündel"> €</span>
+      <div class="mrow"><span>− Porto <span class="muted small">({{ margin.porto_kind }})</span>
+        <input name="porto" class="porto-in" value="{{ '%.2f'|format(d.porto) if d.get('porto') else '' }}"
+               placeholder="auto" inputmode="decimal" aria-label="Porto für das Bündel (leer = automatisch)"> €</span>
         <span>{{ "%.2f"|format(margin.shipping)|replace(".", ",") }} €</span></div>
       <div class="mrow total"><span>= Gewinn</span><span>{{ "%.2f"|format(margin.profit)|replace(".", ",") }} €</span></div>
       <p class="small">

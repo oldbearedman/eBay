@@ -117,11 +117,29 @@ def min_price(ek: float, rate: float, shipping_cost: float, target: float,
     return 9999.99
 
 
-def bundle_shipping(items: list[dict]) -> float:
-    """Porto fürs Paket: teuerstes Einzelporto – mindestens die Staffel nach Stückzahl (Regeln)."""
-    n = len(items)
-    tier = settings.get("porto_5plus") if n >= 5 else settings.get("porto_3_4") if n >= 3 else 0.0
-    return max(max(i["versand_kosten"] for i in items), tier)
+USK18_RE = re.compile(r"\b(USK|FSK)\s?-?\s?18\b|ab 18", re.I)
+
+
+def is_usk18(item_ids: list[str]) -> bool:
+    """Enthält das Paket ein Ü18-Spiel? (USK-Merkmal aus dem Steckbrief, sonst Titel)"""
+    with db.connect() as con:
+        q = ",".join("?" * len(item_ids))
+        rows = con.execute(f"""SELECT l.title, m.usk FROM listings l LEFT JOIN item_meta m USING(item_id)
+                               WHERE l.item_id IN ({q})""", item_ids).fetchall()
+    return any("18" in (r["usk"] or "") or USK18_RE.search(r["title"] or "") for r in rows)
+
+
+def porto_rule(n: int, value: float, usk18: bool) -> tuple[float, str]:
+    """Eigene Portokosten nach Stückzahl und Warenwert → (Kosten, Beschreibung).
+
+    Ü18: immer „Alter“ KP (für den Käufer kostenlos). 1 Spiel bis Wert X → Einzelporto,
+    bis max. N Artikel und Wert Y → Kleinpaket, darüber → Paket (kostenlos, im Preis enthalten).
+    """
+    if usk18 and n == 1 and value <= settings.get("limit_einzeln_alter"):
+        return settings.get("porto_einzeln_alter"), "1 Ü18-Spiel über „Alter“ KP"
+    if n <= settings.get("max_kp_artikel") and value <= settings.get("limit_kp"):
+        return settings.get("porto_kp"), ("Kleinpaket über „Alter“ KP" if usk18 else "Kleinpaket")
+    return settings.get("porto_paket"), "Paket (kostenlos für den Käufer)"
 
 
 # ── WaWi lesen ──────────────────────────────────────────────────────────
@@ -353,8 +371,10 @@ def bundle_margin(item_ids: list[str], price: float, shipping_cost: float | None
     ek = sum(p["ek"] for p in items)
     rate = max(p["fee_rate"] for p in items)
     single_shipping = sum(p["versand_kosten"] for p in items)
-    # Porto: vom Nutzer gesetzt – sonst das Höhere aus Versandprofil-Kosten und Staffel nach Stückzahl
-    ship = shipping_cost if shipping_cost is not None else max(profile_cost or 0.0, bundle_shipping(items))
+    # Porto: vom Nutzer gesetzt – sonst nach Staffel (Stückzahl, Warenwert, Ü18)
+    usk18 = is_usk18(item_ids)
+    rule_cost, porto_kind = porto_rule(len(item_ids), price + charged, usk18)
+    ship = shipping_cost if shipping_cost is not None else rule_cost
     target = settings.get("min_profit_per_item") * len(item_ids)
     max_loss = settings.get("max_loss_per_bundle")
     slow = slow_items(item_ids)
@@ -380,6 +400,7 @@ def bundle_margin(item_ids: list[str], price: float, shipping_cost: float | None
         # Steuerart: § 25a und Regelbesteuerung nicht in einem Paket mischen (Rechnung müsste aufgeteilt werden)
         tax_label=("gemischt" if len(taxes) > 1 else "Regelbesteuerung 19 %" if taxes == {"regel"} else "Differenzbesteuerung § 25a"),
         mixed_tax=len(taxes) > 1,
+        usk18=usk18, porto_kind=porto_kind if shipping_cost is None else "manuell gesetzt",
     )
     res["ok"] = level == "gut" and not res["mixed_tax"]
     res["allowed"] = level != "blockiert" and not res["mixed_tax"]

@@ -155,24 +155,32 @@ def create_draft(item_ids: list[str], price: float | None = None, hint: str | No
     specifics, notes = _merge_specifics(details, first["category_id"])
     usk18 = any(("18" in " ".join(d["specifics"].get("USK-Einstufung", [])))
                 or re.search(r"\b(USK|FSK)\s?18\b|ab 18", d["title"], re.I) for d in details)
-    # Versandprofil: vom ersten Artikel – bei USK 18 zwingend eines mit Altersprüfung (kostenloses bevorzugt)
+    # Versandprofil nach deiner Regel:
+    #  Ü18 → immer „Alter“ KP (Altersprüfung, für den Käufer kostenlos → Preis inkl. Versand)
+    #  sonst: bis max. N Artikel & Warenwert Y → Kleinpaket, darüber → Paket kostenlos (Preis inkl. Versand)
     ship_id = first["shipping_profile"]
+    value = price or suggest_price(total, 10)
     try:
         profs = ebay_account.shipping_profiles()
+        fast = [p for p in profs if (p.get("handling_days") or 0) <= 3]
         cur = next((p for p in profs if p["id"] == ship_id), None)
-        if usk18 and not (cur and cur["age_check"]):
-            age = sorted((p for p in profs if p["age_check"]), key=lambda p: p["buyer_cost"])
+        _, kind = wawi.porto_rule(len(details), value, bool(usk18))
+        if usk18:
+            age = sorted((p for p in fast if p["age_check"]), key=lambda p: p["buyer_cost"])
             if age:
-                ship_id, cur = age[0]["id"], age[0]
-        # Ab 3 Artikeln reicht ein Brief-Profil nicht: Profil wählen, dessen Versandart mind. die Porto-Staffel kostet
-        n = len(details)
-        tier = settings.get("porto_5plus") if n >= 5 else settings.get("porto_3_4") if n >= 3 else 0.0
-        if tier and cur and (cur.get("own_cost") or 0) < tier:
-            fits = sorted((p for p in profs if (p.get("own_cost") or 0) >= tier and p["age_check"] == bool(usk18)
-                           and (p.get("handling_days") or 0) <= 3),
-                          key=lambda p: (p["own_cost"], p["buyer_cost"]))
-            if fits:
-                ship_id, cur = fits[0]["id"], fits[0]
+                cur = age[0]
+        elif kind.startswith("Paket"):
+            free = [p for p in fast if p["buyer_cost"] == 0 and "paket" in p["service"].lower() and not p["age_check"]]
+            if free:
+                cur = free[0]
+        elif len(details) >= 2 and cur and (cur.get("own_cost") or 0) < settings.get("porto_kp"):
+            # Kleinpaket-Profil: Versandart kostet mind. Kleinpaket-Porto, aber weniger als ein Paket
+            kp = sorted((p for p in fast if not p["age_check"]
+                         and settings.get("porto_kp") <= (p.get("own_cost") or 0) < settings.get("porto_paket")),
+                        key=lambda p: p.get("own_cost") or 99)
+            if kp:
+                cur = kp[0]
+        ship_id = cur["id"] if cur else ship_id
         buyer_cost = cur["buyer_cost"] if cur else 0.0
     except Exception:
         buyer_cost = 0.0
@@ -300,8 +308,8 @@ def save_draft(bundle_id: int, form: dict) -> dict:
     d["payment_profile"] = form.get("payment_profile") or d["payment_profile"]
     d["specifics"] = parse_specifics(form["specifics"])
     d["include_originals"] = form.get("include_originals") == "on"
-    if form.get("porto"):
-        d["porto"] = round(float(form["porto"].replace(",", ".")), 2)
+    porto = (form.get("porto") or "").strip()
+    d["porto"] = round(float(porto.replace(",", ".")), 2) if porto else None   # leer = automatisch nach Staffel
     _update(bundle_id, draft=json.dumps(d, ensure_ascii=False))
     return d
 
@@ -342,7 +350,7 @@ def publish(bundle_id: int) -> dict:
         raise ValueError("Das Paket enthält ein USK-18-Spiel – bitte ein Versandprofil mit Altersprüfung "
                          "(z. B. „Alter“ KP) wählen oder „Trotzdem einstellen“ anhaken.")
     m = wawi.bundle_margin([it["item_id"] for it in b["items"]], b["draft"]["price"], b["draft"].get("porto"),
-                           charged=(prof or {}).get("buyer_cost", 0.0), profile_cost=(prof or {}).get("own_cost"))
+                           charged=(prof or {}).get("buyer_cost", 0.0))
     if m.get("complete") and not m["allowed"] and not b["draft"].get("allow_below_min"):
         if m.get("mixed_tax"):
             raise ValueError("Das Paket mischt differenz- und regelbesteuerte Artikel. "
