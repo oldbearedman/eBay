@@ -34,8 +34,10 @@ Beantworte gründlich:
 3. Stimmt der Preis? Vergleiche mit den konkreten Konkurrenzangeboten. Der Mindestgewinn ist nur ein
    Sicherheitsnetz, kein Ziel – der Preis richtet sich nach dem Wert. Das Paket muss günstiger sein als die
    Einzelangebote zusammen (inkl. Versand), aber nicht unnötig billig.
-4. Wäre eine andere Zusammensetzung besser (Artikel weglassen/tauschen)? Du darfst dafür nur die Artikel aus
-   diesem Paket verwenden (weglassen ist erlaubt).
+4. Wäre eine andere Zusammensetzung besser? Du darfst Artikel weglassen und bis zu 2 Artikel aus der
+   KANDIDATENLISTE hinzufügen (nur diese!). Besonders sinnvoll, wenn das Paket im Minus oder zu knapp ist:
+   ein thematisch passender Artikel (gleiche Konsole, Reihe/Genre) mit gutem „gewinn_einzeln“ kann es retten.
+   Kein Lückenfüller, kein Selbstläufer (der verkauft sich allein besser).
 
 Nutze das Werkzeug `pakete_pruefen`, um Varianten (anderer Preis, Artikel weglassen) mit echten Zahlen zu testen,
 bevor du urteilst.
@@ -62,7 +64,7 @@ SCHEMA = {
                 "type": "object",
                 "properties": {
                     "item_id": {"type": "string"},
-                    "empfehlung": {"type": "string", "enum": ["im_paket", "lassen", "anheben", "senken"]},
+                    "empfehlung": {"type": "string", "enum": ["im_paket", "hinzufuegen", "lassen", "anheben", "senken"]},
                     "preis": {"type": ["number", "null"]},
                     "grund": {"type": "string"},
                 },
@@ -132,11 +134,14 @@ def run(item_ids: list[str], price: float, name: str = "") -> dict:
     checks = market.all_checks()
     ww = wawi.for_items(ids)
     first_check = advisor.check_bundle(ids, price, inv_by_id, metas)
+    cands = _candidates(ids, inv_by_id, metas)
+    allowed = set(ids) | {c["id"] for c in cands}
 
     user = "\n\n".join([
         f"# Paketvorschlag: {name or 'ohne Namen'}\nPaketpreis: {price:.2f} € (inkl. Versand)\n"
         f"Prüfung der Zahlen: {json.dumps(first_check, ensure_ascii=False)}",
         *[_item_block(i, inv_by_id[i], checks, ww) for i in ids],
+        _candidate_block(cands),
         "Prüfe dieses Paket jetzt gründlich (teste Varianten mit `pakete_pruefen`) und gib dein Urteil ab.",
     ])
 
@@ -171,7 +176,7 @@ def run(item_ids: list[str], price: float, name: str = "") -> dict:
                 continue
             pakete = block.input.get("pakete", []) if isinstance(block.input, dict) else []
             # Nur Artikel aus diesem Paket zulassen
-            checked = [advisor.check_bundle([i for i in p.get("item_ids", []) if i in ids],
+            checked = [advisor.check_bundle([i for i in p.get("item_ids", []) if i in allowed],
                                             float(p.get("preis", 0)), inv_by_id, metas) for p in pakete]
             results.append({"type": "tool_result", "tool_use_id": block.id,
                             "content": json.dumps(checked, ensure_ascii=False)})
@@ -180,13 +185,49 @@ def run(item_ids: list[str], price: float, name: str = "") -> dict:
         raise RuntimeError("Die Prüfung ist nicht fertig geworden.")
 
     result = json.loads(next(b.text for b in response.content if b.type == "text"))
-    rec_ids = [i for i in result["empfohlene_item_ids"] if i in ids] or ids
+    rec_ids = [i for i in result["empfohlene_item_ids"] if i in allowed] or ids
     result["empfohlene_item_ids"] = rec_ids
     if result["urteil"] != "einzeln_lassen" and result["empfohlener_preis"]:
         result["pruefung"] = advisor.check_bundle(rec_ids, result["empfohlener_preis"], inv_by_id, metas)
-    result["titel"] = {i: inv_by_id[i]["titel"] for i in ids}
-    result["preis_jetzt"] = {i: inv_by_id[i]["preis"] for i in ids}
+    shown = set(ids) | set(rec_ids) | {e["item_id"] for e in result["einzelartikel"] if e["item_id"] in allowed}
+    result["einzelartikel"] = [e for e in result["einzelartikel"] if e["item_id"] in allowed]
+    result["titel"] = {i: inv_by_id[i]["titel"] for i in shown}
+    result["preis_jetzt"] = {i: inv_by_id[i]["preis"] for i in shown}
+    result["hinzugefuegt"] = [i for i in rec_ids if i not in ids]
     with db.connect() as con:
         con.execute("INSERT OR REPLACE INTO bundle_reviews(review_key, created_at, result, cost_usd) VALUES (?, ?, ?, ?)",
                     (key(ids), db.now_iso(), json.dumps(result, ensure_ascii=False), round(cost, 3)))
     return get(ids)
+
+
+
+def _candidates(ids: list[str], inv_by_id: dict, metas: dict, limit: int = 30) -> list[dict]:
+    """Passende Zusatzartikel: gleiche (kompatible) Konsole, nicht in anderen Vorschlägen verplant."""
+    plats = {(metas.get(i) or {}).get("platform") for i in ids} - {None}
+    series = {meta.series_key((metas.get(i) or {}).get("name")) for i in ids} - {None}
+    genres = {g for i in ids for g in ((metas.get(i) or {}).get("genre") or "").split(", ") if g}
+    a = advisor.latest()
+    planned = {x for b in ((a or {}).get("result") or {}).get("buendel", []) for x in b["item_ids"]} - set(ids)
+    out = []
+    for iid, inv in inv_by_id.items():
+        if iid in ids or iid in planned:
+            continue
+        m = metas.get(iid) or {}
+        if not m.get("platform") or not meta.platforms_ok(plats | {m["platform"]}):
+            continue
+        fit = (2 if meta.series_key(m.get("name")) in series else 0) + \
+              (1 if genres & set((m.get("genre") or "").split(", ")) else 0)
+        out.append({**inv, "passung": fit})
+    out.sort(key=lambda c: (-c["passung"], -(c.get("gewinn_einzeln") or -99)))
+    return out[:limit]
+
+
+def _candidate_block(cands: list[dict]) -> str:
+    if not cands:
+        return "# Kandidatenliste zum Hinzufügen\n(keine passenden Artikel verfügbar)"
+    cols = ["id", "titel", "plattform", "genre", "vollst", "preis", "marktpreis", "gewinn_einzeln",
+            "tage", "beob", "diagnose", "selbst_verkauft", "passung"]
+    lines = ["# Kandidatenliste zum Hinzufügen (passung: 2 = gleiche Reihe, 1 = gleiches Genre)", " | ".join(cols)]
+    for c in cands:
+        lines.append(" | ".join(str(c.get(k) if c.get(k) is not None else "–") for k in cols))
+    return "\n".join(lines)

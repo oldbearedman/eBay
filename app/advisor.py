@@ -75,6 +75,14 @@ PREIS – nicht verschenken, aber verkaufbar:
   🟠 abverkauf: bis {MINUS} € Minus – NUR wenn die meisten Artikel Ladenhüter sind; sparsam; „Abverkauf“ in die Strategie.
   🔴 blockiert: nie vorschlagen.
 
+PAKET RETTEN:
+- Liegt ein inhaltlich gutes Paket (Reihe/Thema) im Minus oder nur knapp im Plus, prüfe, ob ein weiterer
+  PASSENDER Artikel (gleiche Konsole, idealerweise gleiche Reihe/Genre) mit gutem „gewinn_einzeln“ das Paket in
+  den grünen Bereich hebt – z. B. ein 2er-Paket mit −1 € + ein passendes Spiel mit +2 € Puffer = 3er-Paket mit Gewinn.
+- Der Rettungsartikel muss thematisch passen (kein Lückenfüller) und sollte KEIN Selbstläufer sein
+  (nicht „selbst_verkauft“ zum aktuellen Preis, nicht viele Beobachter) – ideal: guter Puffer, läuft allein langsam.
+- Prüfe die gerettete Variante mit dem Werkzeug. Findet sich nichts Passendes, lieber kein Paket.
+
 ARBEITSWEISE (wichtig):
 1. Sichte Bestand, Steckbriefe, die vorab gefundenen Reihen/Genre-Gruppen und die Bestellhistorie
    (was wurde zusammen gekauft, welche Plattformen/Genres laufen).
@@ -202,6 +210,9 @@ def _inventory() -> tuple[list[dict], dict]:
             "selbst_verkauft": (f"{len(m['own_sales'])}x Ø {m['sold_avg']:.2f}" if m and m.get("sold_avg") else None),
             "ek": w["ek"] if w else None,
             "min_einzeln": w["min_vk"] if w else None,
+            # Gewinn, den der Artikel zum aktuellen Preis allein nach allen Kosten bringt
+            "gewinn_einzeln": (wawi.profit(r["price"], w["ek"], w["fee_rate"], w["versand_kosten"])["profit"]
+                               if w else None),
             "ladenhueter": "ja" if days is not None and days >= slow_days and r["watch_count"] <= 1 else "nein",
         })
     return inv, meta.groups([i["id"] for i in inv], metas)

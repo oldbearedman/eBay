@@ -94,7 +94,7 @@
       {% for e in rv.einzelartikel %}
         <tr>
           <td class="small">{{ rv.titel.get(e.item_id, e.item_id)[:60] }}</td>
-          <td class="small nowrap">{{ {"im_paket": "📦 ins Paket", "lassen": "👍 so lassen", "anheben": "⬆️ anheben", "senken": "⬇️ senken"}[e.empfehlung] }}
+          <td class="small nowrap">{{ {"im_paket": "📦 ins Paket", "hinzufuegen": "➕ dazunehmen", "lassen": "👍 so lassen", "anheben": "⬆️ anheben", "senken": "⬇️ senken"}[e.empfehlung] }}
             {% if e.preis and e.empfehlung in ("anheben", "senken") %}auf <strong>{{ "%.2f"|format(e.preis)|replace(".", ",") }} €</strong>
               <span class="muted">(jetzt {{ "%.2f"|format(rv.preis_jetzt.get(e.item_id, 0))|replace(".", ",") }} €)</span>{% endif %}</td>
           <td class="small muted">{{ e.grund }}</td>
@@ -107,7 +107,7 @@
         {% for i in rv.empfohlene_item_ids %}<input type="hidden" name="ids" value="{{ i }}">{% endfor %}
         <input type="hidden" name="preis" value="{{ rv.empfohlener_preis }}">
         <input type="hidden" name="hinweis" value="{{ b.name }}{% if b.verkaufsargument %} – {{ b.verkaufsargument }}{% endif %}">
-        <span>Empfehlung: <strong>{{ rv.empfohlene_item_ids|length }} Artikel für {{ "%.2f"|format(rv.empfohlener_preis)|replace(".", ",") }} €</strong>
+        <span>{% if rv.hinzugefuegt %}<span class="status typ">➕ {{ rv.hinzugefuegt|length }} Artikel dazugenommen</span> {% endif %}Empfehlung: <strong>{{ rv.empfohlene_item_ids|length }} Artikel für {{ "%.2f"|format(rv.empfohlener_preis)|replace(".", ",") }} €</strong>
           {% if rv.pruefung and rv.pruefung.gewinn is defined %}<span class="small ok"> · Gewinn {{ "%.2f"|format(rv.pruefung.gewinn)|replace(".", ",") }} €</span>{% endif %}</span>
         <button class="btn">So als Entwurf anlegen</button>
       </form>
