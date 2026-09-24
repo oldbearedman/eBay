@@ -1,5 +1,5 @@
 """Gleicht die lokale Datenbank mit den aktiven eBay-Angeboten ab."""
-from . import bundles, db, ebay_trading
+from . import bundles, db, ebay_trading, wawi
 
 
 def run_sync() -> int:
@@ -28,4 +28,10 @@ def run_sync() -> int:
             )
         con.execute("INSERT INTO sync_log(at, ok, count) VALUES (?, 1, ?)", (now, len(items)))
     bundles.check_online_bundles({it["item_id"] for it in items})
+    if wawi.available():
+        try:
+            wawi.auto_link()
+        except Exception:
+            import logging
+            logging.getLogger("ebay-manager").exception("WaWi-Zuordnung fehlgeschlagen")
     return len(items)

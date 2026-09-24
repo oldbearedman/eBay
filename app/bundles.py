@@ -4,7 +4,7 @@ import json
 import logging
 import math
 
-from . import ai, collage, config, db, ebay_account, ebay_trading
+from . import ai, collage, config, db, ebay_account, ebay_trading, wawi
 
 log = logging.getLogger("ebay-manager")
 
@@ -255,9 +255,12 @@ def save_draft(bundle_id: int, form: dict) -> dict:
     d["description"] = form["description"]
     d["category_id"] = form["category_id"]
     d["condition_id"] = form["condition_id"]
+    d["allow_below_min"] = form.get("allow_below_min") == "on"
     d["shipping_profile"] = form["shipping_profile"]
     d["specifics"] = parse_specifics(form["specifics"])
     d["include_originals"] = form.get("include_originals") == "on"
+    if form.get("porto"):
+        d["porto"] = round(float(form["porto"].replace(",", ".")), 2)
     _update(bundle_id, draft=json.dumps(d, ensure_ascii=False))
     return d
 
@@ -293,6 +296,11 @@ def publish(bundle_id: int) -> dict:
     b = get(bundle_id)
     if b["status"] != "entwurf":
         raise ValueError("Dieses Bündel ist kein Entwurf mehr.")
+    m = wawi.bundle_margin([it["item_id"] for it in b["items"]], b["draft"]["price"], b["draft"].get("porto"))
+    if m.get("complete") and not m["ok"] and not b["draft"].get("allow_below_min"):
+        raise ValueError(
+            f"Der Preis liegt unter deinem Mindestpreis von {m['min_price']:.2f} € (Gewinn nur {m['profit']:.2f} €). "
+            "Preis anheben oder „Trotzdem einstellen“ anhaken.".replace(".", ","))
 
     # 1. Sind alle Einzelartikel noch verfügbar?
     for it in b["items"]:

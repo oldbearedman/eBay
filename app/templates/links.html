@@ -1,0 +1,63 @@
+{% extends "base.html" %}
+{% block title %}WaWi-Zuordnung · eBay Manager{% endblock %}
+{% block content %}
+{% if info %}<p class="banner ok">{{ info }}</p>{% endif %}
+<div class="bundle-head">
+  <h1>Zuordnung zur Warenwirtschaft</h1>
+  <form method="post" action="/zuordnung/auto"><button class="btn secondary">Neu zuordnen</button></form>
+</div>
+<p class="muted">Damit das Tool Einkaufspreise und Mindestpreise kennt, braucht jedes eBay-Angebot seinen WaWi-Artikel.
+  Über die SKU zugeordnete Angebote sind sicher. Titel-Treffer bitte kurz prüfen. Die WaWi wird dabei nur gelesen, nie verändert.</p>
+
+<div class="stats" style="margin: 16px 0">
+  <div><span class="num">{{ counts.sicher }}</span><span class="lbl">sicher zugeordnet</span></div>
+  <div><span class="num">{{ counts.vorschlag }}</span><span class="lbl">Vorschläge prüfen</span></div>
+  <div><span class="num">{{ counts.offen }}</span><span class="lbl">ohne WaWi-Artikel</span></div>
+</div>
+
+{% if suggestions %}
+<form method="post" action="/zuordnung/bestaetigen" class="card">
+  <div class="bundle-head">
+    <h2>Vorschläge über den Titel</h2>
+    <span class="actions">
+      <button class="btn secondary" name="min_score" value="0.8">Alle ab 80 % Übereinstimmung bestätigen</button>
+      <button class="btn">Markierte bestätigen</button>
+    </span>
+  </div>
+  <table class="listings">
+    <thead><tr><th class="check"><input type="checkbox" id="all" aria-label="Alle markieren"></th><th>eBay-Angebot</th><th>WaWi-Artikel</th><th class="r">Treffer</th></tr></thead>
+    <tbody>
+    {% for s in suggestions %}
+      <tr>
+        <td class="check"><input type="checkbox" name="ok" value="{{ s.item_id }}"></td>
+        <td class="title"><a href="{{ s.url }}" target="_blank" rel="noopener">{{ s.title }}</a><span class="muted id">{{ "%.2f"|format(s.price)|replace(".", ",") }} €</span></td>
+        <td>
+          <select name="p_{{ s.item_id }}">
+            {% for score, c in s.cands %}
+              <option value="{{ c.produktnr }}" {% if c.produktnr == s.produktnr %}selected{% endif %}>{{ c.artikel }} · EK {{ "%.2f"|format(c.ek)|replace(".", ",") }} € · {{ c.produktnr }}</option>
+            {% endfor %}
+          </select>
+        </td>
+        <td class="r"><span class="pill">{{ (s.score * 100)|round|int }} %</span></td>
+      </tr>
+    {% endfor %}
+    </tbody>
+  </table>
+</form>
+{% endif %}
+
+{% if open %}
+<details class="card" style="margin-top:16px">
+  <summary>{{ open|length }} Angebote ohne passenden WaWi-Artikel</summary>
+  <p class="muted small">Diese Artikel stehen vermutlich nicht in der WaWi (z. B. Sammelkarten). Ohne Zuordnung zeigt das Tool keine Marge an.</p>
+  <ul>{% for o in open %}<li>{{ o.title }}</li>{% endfor %}</ul>
+</details>
+{% endif %}
+{% endblock %}
+
+{% block scripts %}
+<script>
+const all = document.getElementById('all');
+if (all) all.addEventListener('change', () => document.querySelectorAll('input[name="ok"]').forEach(b => b.checked = all.checked));
+</script>
+{% endblock %}

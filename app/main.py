@@ -11,7 +11,7 @@ from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, Redirect
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 
-from . import advisor, ai, bundles, config, db, ebay_account, ebay_auth, ebay_trading, market, sync
+from . import advisor, ai, bundles, config, db, ebay_account, ebay_auth, ebay_trading, market, sync, wawi
 
 log = logging.getLogger("ebay-manager")
 templates = Jinja2Templates(directory=config.BASE_DIR / "app" / "templates")
@@ -44,6 +44,7 @@ async def lifespan(app: FastAPI):
     bundles.init()
     market.init()
     advisor.init()
+    wawi.init()
     task = asyncio.create_task(_auto_sync())
     yield
     task.cancel()
@@ -151,8 +152,9 @@ def bundle_edit(request: Request, bundle_id: int, info: str = "", fehler: str = 
     except Exception:
         log.exception("Versandprofile nicht abrufbar")
         profiles = [{"id": b["draft"]["shipping_profile"], "name": "Versandprofil des ersten Artikels", "description": ""}]
+    margin = wawi.bundle_margin([it["item_id"] for it in b["items"]], b["draft"]["price"], b["draft"].get("porto"))
     return templates.TemplateResponse(request, "bundle_edit.html", {
-        "b": b, "d": b["draft"], "profiles": profiles,
+        "b": b, "d": b["draft"], "profiles": profiles, "margin": margin,
         "specifics_text": bundles.format_specifics(b["draft"]["specifics"]),
         "info": info, "fehler": fehler, "pruefung": pruefung, "ai_enabled": ai.enabled(),
     })
@@ -231,8 +233,16 @@ def market_detail(request: Request, item_id: str, info: str = "", fehler: str = 
         listing = con.execute("SELECT * FROM listings WHERE item_id = ?", (item_id,)).fetchone()
     if not listing:
         raise HTTPException(404)
+    m = market.all_checks().get(item_id)
+    w = wawi.for_items([item_id]).get(item_id)
+    calc = None
+    if w:
+        ship = w["versand_kosten"]
+        calc = {"now": wawi.profit(listing["price"], w["ek"], w["fee_rate"], ship)}
+        if m and m.get("suggestion"):
+            calc["suggestion"] = wawi.profit(m["suggestion"], w["ek"], w["fee_rate"], ship)
     return templates.TemplateResponse(request, "market.html", {
-        "l": dict(listing), "m": market.all_checks().get(item_id), "info": info, "fehler": fehler,
+        "l": dict(listing), "m": m, "w": w, "calc": calc, "info": info, "fehler": fehler,
     })
 
 
@@ -259,8 +269,12 @@ def suggestions(request: Request, fehler: str = ""):
     listings = {r["item_id"]: dict(r) for r in rows}
     fixed = [l for l in listings.values() if l["listing_type"] == "FixedPriceItem"]
     checks = market.all_checks()
+    a = advisor.latest()
+    if a and a.get("result"):
+        for b in a["result"]["buendel"]:  # Marge immer mit aktuellen WaWi-Daten
+            b["marge"] = wawi.bundle_margin(b["item_ids"], b["preis"])
     return templates.TemplateResponse(request, "suggestions.html", {
-        "a": advisor.latest(), "running": advisor.state["running"], "listings": listings,
+        "a": a, "running": advisor.state["running"], "listings": listings,
         "ai_enabled": ai.enabled(), "fehler": fehler,
         "total": len(fixed), "checked": sum(1 for l in fixed if l["item_id"] in checks),
     })
@@ -278,3 +292,56 @@ def suggestions_start():
 @app.get("/vorschlaege/status")
 def suggestions_status():
     return JSONResponse({"running": advisor.state["running"]})
+
+
+# ── WaWi-Zuordnung ──────────────────────────────────────────────────────
+
+@app.get("/zuordnung", response_class=HTMLResponse)
+def links_page(request: Request, info: str = ""):
+    prods = wawi.products() if wawi.available() else {}
+    with db.connect() as con:
+        listings = {r["item_id"]: dict(r) for r in con.execute("SELECT * FROM listings WHERE active = 1")}
+        rows = {r["item_id"]: dict(r) for r in con.execute("SELECT * FROM wawi_links")}
+    suggestions, open_ = [], []
+    for iid, l in listings.items():
+        r = rows.get(iid)
+        if r and r["confirmed"]:
+            continue
+        if r:
+            cands = wawi.candidates(l["title"], prods)
+            if r["produktnr"] not in [c["produktnr"] for _, c in cands] and r["produktnr"] in prods:
+                cands.insert(0, (r["score"], prods[r["produktnr"]]))
+            suggestions.append({**l, "produktnr": r["produktnr"], "score": r["score"] or 0, "cands": cands})
+        else:
+            open_.append(l)
+    suggestions.sort(key=lambda s: -s["score"])
+    counts = {"sicher": sum(1 for r in rows.values() if r["confirmed"] and r["item_id"] in listings),
+              "vorschlag": len(suggestions), "offen": len(open_)}
+    return templates.TemplateResponse(request, "links.html", {
+        "suggestions": suggestions, "open": open_, "counts": counts, "info": info,
+    })
+
+
+@app.post("/zuordnung/auto")
+async def links_auto():
+    stats = await asyncio.to_thread(wawi.auto_link)
+    return _back("/zuordnung", info=f"Neu zugeordnet: {stats['sku']} über SKU, {stats['titel']} Vorschläge über den Titel.")
+
+
+@app.post("/zuordnung/bestaetigen")
+async def links_confirm(request: Request):
+    form = await request.form()
+    chosen = set(form.getlist("ok"))
+    if form.get("min_score"):
+        with db.connect() as con:
+            chosen |= {r["item_id"] for r in con.execute(
+                "SELECT item_id FROM wawi_links WHERE confirmed = 0 AND score >= ?", (float(form["min_score"]),))}
+    for iid in chosen:
+        pnr = form.get(f"p_{iid}")
+        if not pnr:
+            with db.connect() as con:
+                r = con.execute("SELECT produktnr FROM wawi_links WHERE item_id = ?", (iid,)).fetchone()
+            pnr = r["produktnr"] if r else None
+        if pnr:
+            wawi.link(iid, pnr)
+    return _back("/zuordnung", info=f"{len(chosen)} Zuordnungen bestätigt.")

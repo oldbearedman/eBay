@@ -161,3 +161,13 @@ h2.section { font-size: 17px; margin: 28px 0 12px; }
 .prio-mittel { background: #fff1d6; color: var(--warn); }
 .prio-niedrig { background: var(--border); color: var(--muted); }
 @media (prefers-color-scheme: dark) { .prio-hoch { background: #3a1c1c; } .prio-mittel { background: #3a2a10; } }
+
+/* ── Marge ─────────────────────────────────────────────────────── */
+.margin-box { border: 1px solid var(--border); border-radius: 10px; padding: 12px 14px; margin-bottom: 16px; font-size: 14px; }
+.margin-box.m-ok { border-color: var(--ok); } .margin-box.m-bad { border-color: var(--error); }
+.mrow { display: flex; justify-content: space-between; gap: 12px; padding: 2px 0; }
+.mrow.total { border-top: 1px solid var(--border); margin-top: 4px; padding-top: 6px; font-weight: 700; }
+.m-ok .total span:last-child { color: var(--ok); } .m-bad .total span:last-child { color: var(--error); }
+.margin-box p { margin: 8px 0 0; }
+.bundle-form .margin-box input.porto-in { display: inline-block; width: 70px; margin: 0 4px; padding: 2px 6px; }
+.margin-line { display: flex; gap: 20px; flex-wrap: wrap; margin-bottom: 16px; font-size: 14px; }

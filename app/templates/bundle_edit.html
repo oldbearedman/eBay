@@ -59,6 +59,31 @@
       </label>
     </div>
 
+    {% if margin.complete %}
+    <div class="margin-box {% if margin.ok %}m-ok{% else %}m-bad{% endif %}">
+      <div class="mrow"><span>Bündelpreis</span><span>{{ "%.2f"|format(margin.price)|replace(".", ",") }} €</span></div>
+      <div class="mrow"><span>− Einkaufspreise (WaWi)</span><span>{{ "%.2f"|format(margin.ek)|replace(".", ",") }} €</span></div>
+      <div class="mrow"><span>− eBay-Gebühr ({{ (margin.fee_rate * 100)|round|int }} % + fix)</span><span>{{ "%.2f"|format(margin.fee)|replace(".", ",") }} €</span></div>
+      <div class="mrow"><span>− Differenzsteuer § 25a</span><span>{{ "%.2f"|format(margin.tax)|replace(".", ",") }} €</span></div>
+      <div class="mrow"><span>− Porto
+        <input name="porto" class="porto-in" value="{{ '%.2f'|format(margin.shipping) }}" inputmode="decimal" aria-label="Porto für das Bündel"> €</span>
+        <span>{{ "%.2f"|format(margin.shipping)|replace(".", ",") }} €</span></div>
+      <div class="mrow total"><span>= Gewinn</span><span>{{ "%.2f"|format(margin.profit)|replace(".", ",") }} €</span></div>
+      <p class="small">
+        Mindestpreis fürs Bündel: <strong>{{ "%.2f"|format(margin.min_price)|replace(".", ",") }} €</strong>
+        (mind. {{ "%.2f"|format(margin.target)|replace(".", ",") }} € Gewinn, 1 € je Artikel) ·
+        einzeln wären es mind. {{ "%.2f"|format(margin.sum_min_vk)|replace(".", ",") }} €
+        {% if margin.porto_saved > 0 %} · <span class="ok">{{ "%.2f"|format(margin.porto_saved)|replace(".", ",") }} € Porto gespart</span>{% endif %}
+      </p>
+      {% if not margin.ok %}
+        <label class="inline small"><input type="checkbox" name="allow_below_min" {% if d.get("allow_below_min") %}checked{% endif %}> Trotzdem einstellen (unter Mindestpreis)</label>
+      {% endif %}
+      <p class="muted small">Nach Preis- oder Portoänderung „Speichern“, um neu zu rechnen.</p>
+    </div>
+    {% else %}
+    <p class="muted small">Marge unbekannt: {{ margin.missing|length }} Artikel sind noch keinem WaWi-Artikel zugeordnet (<a href="/zuordnung">Zuordnung</a>).</p>
+    {% endif %}
+
     <div class="two">
       <label>Kategorie
         <select name="category_id">

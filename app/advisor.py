@@ -6,7 +6,7 @@ from datetime import datetime, timezone
 
 import anthropic
 
-from . import ai, db, ebay_orders, market
+from . import ai, db, ebay_orders, market, wawi
 
 log = logging.getLogger("ebay-manager")
 
@@ -45,6 +45,10 @@ Preis marktgerecht) – außer als bewusstes Zugpferd, und begründe das.
 
 Regeln:
 - Verwende nur item_ids aus der Bestandsliste. Jeder Artikel höchstens in einem Bündel.
+- Untergrenze: Einkaufspreise und Mindestpreise (1 € Gewinn nach Gebühren, Porto, Steuer) stehen in der Liste.
+  Ein Paket braucht nur EIN Porto (ca. 1,90–3,39 €) statt eines je Artikel – deshalb darf der Paketpreis unter der
+  Summe der Einzel-Mindestpreise liegen, aber nie unter: Summe EK + 12 % Gebühr + 0,45 € + Porto + 1 € Gewinn je Artikel.
+  Liegt der Markt darunter, lieber ein kleineres/anderes Paket bilden als Verlust machen.
 - Paketpreis: unter der Summe der einzelnen Marktwerte (Ø der günstigsten Konkurrenz, falls vorhanden,
   sonst aktueller Preis), aber nicht verschenkt. Gib einen konkreten Preis in Euro an (auf ,49/,99).
 - Begründe jedes Bündel kurz und konkret mit den Daten (Standzeit, Beobachter, Marktabstand, Historie).
@@ -106,9 +110,11 @@ def _inventory() -> list[dict]:
         rows = con.execute(
             "SELECT * FROM listings WHERE active = 1 AND listing_type = 'FixedPriceItem' ORDER BY title"
         ).fetchall()
+    ww = wawi.for_items([r["item_id"] for r in rows])
     inv = []
     for r in rows:
         m = checks.get(r["item_id"])
+        w = ww.get(r["item_id"])
         days = (now - datetime.fromisoformat(r["start_time"].replace("Z", "+00:00"))).days if r["start_time"] else None
         inv.append({
             "id": r["item_id"], "titel": r["title"], "preis": r["price"], "menge": r["quantity"],
@@ -116,13 +122,15 @@ def _inventory() -> list[dict]:
             "markt_avg5_inkl_versand": m["avg5"] if m else None,
             "eigener_preis_inkl_versand": m["own_price"] if m else None,
             "markt_abstand_prozent": m["diff_pct"] if m else None,
+            "ek": w["ek"] if w else None,
+            "mindestpreis": w["min_vk"] if w else None,
         })
     return inv
 
 
 def _prompt(inv: list[dict], orders: list[dict]) -> str:
     lines = ["# Bestand (aktive Festpreis-Angebote)",
-             "id | titel | preis € | menge | tage_online | beobachter | markt_Ø5_inkl_versand | eigener_preis_inkl_versand | markt_abstand_%"]
+             "id | titel | preis € | menge | tage_online | beobachter | markt_Ø5_inkl_versand | eigener_preis_inkl_versand | markt_abstand_% | einkaufspreis € | mindestpreis_einzeln €"]
     for i in inv:
         lines.append(" | ".join(str(v if v is not None else "–") for v in i.values()))
     multi = [o for o in orders if len(o["items"]) > 1 or any(li["qty"] > 1 for li in o["items"])]
@@ -173,6 +181,7 @@ def _run(analysis_id: int) -> None:
                 used.update(ids)
                 b["item_ids"] = ids
                 b["summe_einzeln"] = round(sum(valid[i]["preis"] for i in ids), 2)
+                b["marge"] = wawi.bundle_margin(ids, b["preis"])
                 bundles.append(b)
         result["buendel"] = bundles
         result["einzel_tipps"] = [t for t in result["einzel_tipps"] if t["item_id"] in valid]

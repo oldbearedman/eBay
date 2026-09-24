@@ -49,6 +49,14 @@
             <input type="hidden" name="ids" value="{{ iid }}"></li>
         {% endfor %}
       </ul>
+      {% set mg = b.marge %}
+      {% if mg and mg.complete %}
+        <p class="small {% if mg.ok %}ok{% else %}error{% endif %}">
+          Gewinn {{ "%.2f"|format(mg.profit)|replace(".", ",") }} € · Mindestpreis {{ "%.2f"|format(mg.min_price)|replace(".", ",") }} €
+          {% if not mg.ok %} – <strong>unter deinem Mindestpreis!</strong>{% endif %}
+          {% if mg.porto_saved > 0 %}<span class="muted"> · {{ "%.2f"|format(mg.porto_saved)|replace(".", ",") }} € Porto gespart</span>{% endif %}
+        </p>
+      {% elif mg %}<p class="muted small">Marge unbekannt ({{ mg.missing|length }} Artikel ohne WaWi-Zuordnung)</p>{% endif %}
       <p><strong>Warum:</strong> {{ b.begruendung }}</p>
       <p><strong>Strategie:</strong> {{ b.strategie }}</p>
       <input type="hidden" name="preis" value="{{ b.preis }}">
