@@ -4,22 +4,49 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>{% block title %}eBay Manager{% endblock %}</title>
+  <script>
+    // Gespeichertes Farbschema sofort anwenden (verhindert Aufblitzen)
+    try { const t = localStorage.getItem('theme'); if (t) document.documentElement.dataset.theme = t; } catch (e) {}
+  </script>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Nunito:wght@400;500;600;700;800&display=swap">
   <link rel="stylesheet" href="/static/style.css">
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>📦</text></svg>">
 </head>
 <body>
+  {% set path = request.url.path %}
+  {% set nav = [
+    ("/", "🏷️", "Angebote"), ("/buendel", "📦", "Bündel"), ("/vorschlaege", "✨", "Vorschläge"),
+    ("/rabatte", "🎁", "Kombi-Rabatt"), ("/zuordnung", "🔗", "WaWi"), ("/einstellungen", "⚙️", "Regeln"),
+    ("/anmelden", "🔑", "eBay-Zugang"),
+  ] %}
   <header class="top">
-    <a class="brand" href="/">eBay&nbsp;Manager</a>
+    <a class="brand" href="/"><span class="brand-logo">📦</span>eBay&nbsp;Manager</a>
     <nav>
-      <a href="/">Angebote</a>
-      <a href="/buendel">Bündel</a>
-      <a href="/vorschlaege">Vorschläge</a>
-      <a href="/rabatte">Kombi-Rabatt</a>
-      <a href="/zuordnung">WaWi</a>
-      <a href="/einstellungen">Regeln</a>
-      <a href="/anmelden">eBay-Zugang</a>
+      {% for href, icon, label in nav %}
+        {% set active = (path == "/" or path.startswith("/markt")) if href == "/" else path.startswith(href) %}
+        <a href="{{ href }}" class="{% if active %}active{% endif %}">{{ icon }}<span class="nav-text">{{ label }}</span></a>
+      {% endfor %}
     </nav>
+    <button type="button" class="theme-toggle" id="theme-toggle" title="Farbschema wechseln">🌗 Auto</button>
   </header>
   <main>{% block content %}{% endblock %}</main>
+  <script>
+    (() => {
+      const btn = document.getElementById('theme-toggle');
+      const modes = [["", "🌗 Auto"], ["light", "☀️ Hell"], ["dark", "🌥️ Grau"]];
+      const current = () => document.documentElement.dataset.theme || "";
+      const show = () => { btn.textContent = modes.find(m => m[0] === current())[1]; };
+      btn.addEventListener('click', () => {
+        const next = modes[(modes.findIndex(m => m[0] === current()) + 1) % modes.length][0];
+        if (next) document.documentElement.dataset.theme = next; else delete document.documentElement.dataset.theme;
+        try { next ? localStorage.setItem('theme', next) : localStorage.removeItem('theme'); } catch (e) {}
+        show();
+      });
+      show();
+    })();
+  </script>
   {% block scripts %}{% endblock %}
 </body>
 </html>
