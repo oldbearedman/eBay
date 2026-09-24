@@ -25,7 +25,9 @@ CREATE TABLE IF NOT EXISTS item_meta (
 """
 
 # Wörter, die nicht zum Seriennamen gehören
-SERIES_STOP = {"the", "der", "die", "das", "a", "an", "of", "und", "and", "edition", "game", "of", "year"}
+SERIES_STOP = {"the", "der", "die", "das", "a", "an", "of", "und", "and", "edition", "game", "year",
+               "original", "sony", "microsoft", "nintendo", "playstation", "xbox", "tom", "clancy", "clancys",
+               "disney", "lego", "neu", "ovp"}
 
 
 def init() -> None:
@@ -103,7 +105,8 @@ def groups(item_ids: list[str], metas: dict[str, dict]) -> dict:
     by_genre = defaultdict(list)
     for iid in item_ids:
         m = metas.get(iid) or {}
-        key = series_key(m.get("name"))
+        is_game = "videospiel" in (m.get("category") or "").lower() and "zubehör" not in (m.get("category") or "").lower()
+        key = series_key(m.get("name")) if is_game else None
         if key:
             fam = "PS1/PS2" if m.get("platform") in ("PS1", "PS2") else (m.get("platform") or "?")
             by_series[(key, fam)].append(iid)
@@ -111,6 +114,8 @@ def groups(item_ids: list[str], metas: dict[str, dict]) -> dict:
             if g and m.get("platform"):
                 by_genre[(m["platform"], g)].append(iid)
     return {
-        "reihen": {f"{k} [{fam}]": v for (k, fam), v in by_series.items() if len(v) >= 2},
+        # nur echte Reihen: mindestens zwei VERSCHIEDENE Spiele (Dubletten zählen nicht)
+        "reihen": {f"{k} [{fam}]": v for (k, fam), v in by_series.items()
+                   if len({(metas.get(i) or {}).get("name", "").lower() for i in v}) >= 2},
         "genres": {f"{plat} · {g}": v for (plat, g), v in by_genre.items() if len(v) >= 2},
     }
