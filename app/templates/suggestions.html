@@ -1,0 +1,102 @@
+{% extends "base.html" %}
+{% block title %}Bündel-Vorschläge · eBay Manager{% endblock %}
+{% set prio = {"hoch": "Hohe Priorität", "mittel": "Mittlere Priorität", "niedrig": "Niedrige Priorität"} %}
+{% block content %}
+{% if fehler %}<p class="banner error">{{ fehler }}</p>{% endif %}
+<div class="bundle-head">
+  <h1>Bündel-Vorschläge <span class="muted small">von Claude Opus 5.5</span></h1>
+  <form method="post" action="/vorschlaege">
+    <button class="btn" {% if running or not ai_enabled %}disabled{% endif %}>
+      {% if running %}Analyse läuft …{% else %}Neue Analyse starten{% endif %}
+    </button>
+  </form>
+</div>
+<p class="muted">Claude wertet deinen Bestand, die Marktpreise (inkl. Versand) und deine Bestellhistorie aus und schlägt Pakete samt Preis vor.
+  {% if checked < total %}<br><strong>Tipp:</strong> Erst „Alle Marktpreise prüfen“ laufen lassen – bisher haben {{ checked }} von {{ total }} Angeboten einen Marktwert.{% endif %}</p>
+
+{% if not a %}
+  <div class="card empty-state"><p>Noch keine Analyse.</p><p class="muted">Dauert etwa 1–3 Minuten und kostet grob 0,20–0,60 $.</p></div>
+{% elif a.status == "laeuft" %}
+  <div class="card empty-state" id="running"><p>Claude analysiert gerade deinen Bestand …</p><p class="muted">Die Seite aktualisiert sich automatisch.</p></div>
+{% elif a.status == "fehler" %}
+  <p class="banner error">Die letzte Analyse ist fehlgeschlagen: {{ a.error }}</p>
+{% else %}
+  {% set r = a.result %}
+  <div class="card">
+    <h2>Gesamtlage</h2>
+    <p>{{ r.zusammenfassung }}</p>
+    <p class="muted small">Analyse vom {{ a.created_at[:16]|replace("T", " ") }} UTC · {{ a.stats.bestand }} Angebote · {{ a.stats.bestellungen }} Bestellungen · {{ a.stats.mit_marktwert }} mit Marktwert · Kosten ca. {{ "%.2f"|format(a.cost_usd) }} $</p>
+  </div>
+
+  <h2 class="section">Vorgeschlagene Bündel ({{ r.buendel|length }})</h2>
+  <div class="suggest-list">
+  {% for b in r.buendel %}
+    <form class="card suggestion" method="post" action="/buendel">
+      <div class="sg-head">
+        <div>
+          <span class="status prio-{{ b.prioritaet }}">{{ prio[b.prioritaet] }}</span>
+          <h3>{{ b.name }}</h3>
+        </div>
+        <div class="sg-price">
+          <span class="num">{{ "%.2f"|format(b.preis)|replace(".", ",") }} €</span>
+          <span class="muted small">einzeln {{ "%.2f"|format(b.summe_einzeln)|replace(".", ",") }} €</span>
+        </div>
+      </div>
+      <ul class="sg-items">
+        {% for iid in b.item_ids %}{% set l = listings.get(iid) %}
+          <li>{% if l and l.image_url %}<img src="{{ l.image_url }}" alt="" loading="lazy">{% endif %}
+            <span>{{ l.title if l else iid }}{% if l %} <span class="muted small">· {{ "%.2f"|format(l.price)|replace(".", ",") }} €</span>{% endif %}</span>
+            <input type="hidden" name="ids" value="{{ iid }}"></li>
+        {% endfor %}
+      </ul>
+      <p><strong>Warum:</strong> {{ b.begruendung }}</p>
+      <p><strong>Strategie:</strong> {{ b.strategie }}</p>
+      <input type="hidden" name="preis" value="{{ b.preis }}">
+      {% set gone = b.item_ids|reject("in", listings)|list %}
+      {% if gone %}<p class="warn small">{{ gone|length }} Artikel davon ist nicht mehr aktiv (verkauft oder schon gebündelt).</p>
+      {% else %}<button class="btn">Als Bündel-Entwurf anlegen</button>{% endif %}
+    </form>
+  {% else %}
+    <p class="muted">Keine Bündel vorgeschlagen.</p>
+  {% endfor %}
+  </div>
+
+  {% if r.einzel_tipps %}
+  <h2 class="section">Tipps für einzelne Artikel</h2>
+  <div class="table-wrap">
+  <table class="listings">
+    <thead><tr><th></th><th>Artikel</th><th>Tipp</th><th class="r">Preis jetzt</th><th class="r">Vorschlag</th></tr></thead>
+    <tbody>
+    {% for t in r.einzel_tipps %}{% set l = listings.get(t.item_id) %}
+      <tr>
+        <td class="thumb">{% if l and l.image_url %}<img src="{{ l.image_url }}" alt="" loading="lazy">{% endif %}</td>
+        <td class="title">{% if l %}<a href="/markt/{{ t.item_id }}">{{ l.title }}</a>{% else %}#{{ t.item_id }}{% endif %}</td>
+        <td>{{ t.tipp }}</td>
+        <td class="r nowrap">{% if l %}{{ "%.2f"|format(l.price)|replace(".", ",") }} €{% endif %}</td>
+        <td class="r nowrap">{% if t.preis %}<strong>{{ "%.2f"|format(t.preis)|replace(".", ",") }} €</strong>{% endif %}</td>
+      </tr>
+    {% endfor %}
+    </tbody>
+  </table>
+  </div>
+  {% endif %}
+{% endif %}
+{% endblock %}
+
+{% block scripts %}
+{% if running %}
+<script>
+(function poll() {
+  setTimeout(async () => {
+    const s = await (await fetch('/vorschlaege/status')).json();
+    if (s.running) poll(); else location.reload();
+  }, 5000);
+})();
+</script>
+{% endif %}
+<script>
+document.querySelectorAll('form.suggestion').forEach(f => f.addEventListener('submit', () => {
+  const b = f.querySelector('button'); b.disabled = true; b.textContent = 'Erstelle Entwurf, Collage & Texte …';
+}));
+</script>
+{% endblock %}

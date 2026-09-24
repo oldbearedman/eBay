@@ -144,3 +144,20 @@ details { margin-bottom: 16px; } summary { cursor: pointer; color: var(--accent)
 .suggest .row input { width: 110px; }
 .card h2 { font-size: 16px; margin: 0; }
 .card .listings { margin-top: 12px; }
+
+/* ── Vorschläge ────────────────────────────────────────────────── */
+h2.section { font-size: 17px; margin: 28px 0 12px; }
+.card > h2 + p { margin-top: 8px; }
+.suggest-list { display: grid; grid-template-columns: repeat(auto-fill, minmax(360px, 1fr)); gap: 16px; }
+@media (max-width: 420px) { .suggest-list { grid-template-columns: minmax(0, 1fr); } }
+.suggestion p { margin: 8px 0; font-size: 14px; }
+.sg-head { display: flex; justify-content: space-between; gap: 12px; align-items: flex-start; }
+.sg-head h3 { margin: 6px 0 0; font-size: 16px; }
+.sg-price { display: flex; flex-direction: column; align-items: flex-end; white-space: nowrap; }
+.sg-items { list-style: none; padding: 0; margin: 12px 0; display: grid; gap: 6px; }
+.sg-items li { display: flex; gap: 10px; align-items: center; font-size: 14px; }
+.sg-items img { width: 40px; height: 40px; object-fit: cover; border-radius: 6px; flex: none; }
+.prio-hoch { background: #fde7e7; color: var(--error); }
+.prio-mittel { background: #fff1d6; color: var(--warn); }
+.prio-niedrig { background: var(--border); color: var(--muted); }
+@media (prefers-color-scheme: dark) { .prio-hoch { background: #3a1c1c; } .prio-mittel { background: #3a2a10; } }

@@ -142,7 +142,7 @@ def _sku(details: list[dict]) -> str | None:
     return joined if len(joined) <= 50 else f"{skus[0]}+{len(details) - 1}weitere"[:50]
 
 
-def create_draft(item_ids: list[str]) -> int:
+def create_draft(item_ids: list[str], price: float | None = None) -> int:
     details = [ebay_trading.item_details(i) for i in item_ids]
     for d in details:
         if d["listing_type"] != "FixedPriceItem":
@@ -154,9 +154,9 @@ def create_draft(item_ids: list[str]) -> int:
     specifics, notes = _merge_specifics(details, first["category_id"])
     draft = {
         "title": _suggest_title(details),
-        "discount": 10,
+        "discount": round((1 - price / total) * 100) if price and total else 10,
         "total": round(total, 2),
-        "price": suggest_price(total, 10),
+        "price": round(price, 2) if price else suggest_price(total, 10),
         "description": _description(details),
         "category_id": first["category_id"],
         "categories": sorted({(d["category_id"], d["category_name"]) for d in details}),

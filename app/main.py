@@ -11,7 +11,7 @@ from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, Redirect
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 
-from . import ai, bundles, config, db, ebay_account, ebay_auth, ebay_trading, market, sync
+from . import advisor, ai, bundles, config, db, ebay_account, ebay_auth, ebay_trading, market, sync
 
 log = logging.getLogger("ebay-manager")
 templates = Jinja2Templates(directory=config.BASE_DIR / "app" / "templates")
@@ -43,6 +43,7 @@ async def lifespan(app: FastAPI):
     db.init()
     bundles.init()
     market.init()
+    advisor.init()
     task = asyncio.create_task(_auto_sync())
     yield
     task.cancel()
@@ -124,8 +125,9 @@ async def bundle_create(request: Request):
     ids = form.getlist("ids")
     if len(ids) < 2:
         return _back("/", fehler="Bitte mindestens zwei Angebote auswählen.")
+    price = float(form["preis"]) if form.get("preis") else None
     try:
-        bundle_id = await asyncio.to_thread(bundles.create_draft, ids)
+        bundle_id = await asyncio.to_thread(bundles.create_draft, ids, price)
     except Exception as exc:
         log.exception("Bündel-Entwurf fehlgeschlagen")
         return _back("/", fehler=str(exc))
@@ -246,3 +248,33 @@ async def market_set_price(item_id: str, preis: str = Form(...)):
     except Exception as exc:
         return _back(url, fehler=str(exc))
     return _back(url, info=f"Preis bei eBay auf {new:.2f} € geändert.".replace(".", ","))
+
+
+# ── Bündel-Vorschläge (Claude-Analyse) ──────────────────────────────────
+
+@app.get("/vorschlaege", response_class=HTMLResponse)
+def suggestions(request: Request, fehler: str = ""):
+    with db.connect() as con:
+        rows = con.execute("SELECT * FROM listings WHERE active = 1").fetchall()
+    listings = {r["item_id"]: dict(r) for r in rows}
+    fixed = [l for l in listings.values() if l["listing_type"] == "FixedPriceItem"]
+    checks = market.all_checks()
+    return templates.TemplateResponse(request, "suggestions.html", {
+        "a": advisor.latest(), "running": advisor.state["running"], "listings": listings,
+        "ai_enabled": ai.enabled(), "fehler": fehler,
+        "total": len(fixed), "checked": sum(1 for l in fixed if l["item_id"] in checks),
+    })
+
+
+@app.post("/vorschlaege")
+def suggestions_start():
+    try:
+        advisor.start()
+    except Exception as exc:
+        return _back("/vorschlaege", fehler=str(exc))
+    return RedirectResponse("/vorschlaege", status_code=303)
+
+
+@app.get("/vorschlaege/status")
+def suggestions_status():
+    return JSONResponse({"running": advisor.state["running"]})
