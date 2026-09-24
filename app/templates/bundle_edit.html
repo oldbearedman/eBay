@@ -50,11 +50,12 @@
     </label>
 
     <div class="price-row">
-      <label>Einzelpreise zusammen
-        <input value="{{ '%.2f'|format(d.total)|replace('.', ',') }} €" disabled>
+      {% set total_incl = d.get("total_incl") or d.total %}
+      <label>Einzeln zusammen <span class="muted small">(inkl. Versand)</span>
+        <input value="{{ '%.2f'|format(total_incl)|replace('.', ',') }} €" disabled>
       </label>
-      <label>Rabatt %
-        <input name="discount" id="discount" type="number" min="0" max="90" step="1" value="{{ d.discount|int }}">
+      <label>Ersparnis für Käufer %
+        <input name="discount" id="discount" type="number" min="-50" max="90" step="1" value="{{ d.discount|int }}">
       </label>
       <label>Artikelpreis € <span class="muted small">(ohne Versand)</span>
         <input name="price" id="price" value="{{ '%.2f'|format(d.price) }}" inputmode="decimal" required>
@@ -170,10 +171,13 @@
   const upd = () => tc.textContent = `${title.value.length}/80`;
   title.addEventListener('input', upd); upd();
 
-  const total = {{ d.total }}, disc = document.getElementById('discount'), price = document.getElementById('price');
+  // Ersparnis bezieht sich auf den Gesamtpreis für den Käufer (inkl. Versand) im Vergleich zu den Einzelangeboten
+  const total = {{ d.get("total_incl") or d.total }}, disc = document.getElementById('discount'), price = document.getElementById('price');
   disc.addEventListener('input', () => {
-    const v = total * (1 - (parseFloat(disc.value) || 0) / 100);
-    price.value = Math.max(0.99, Math.floor((v + 0.01) * 2) / 2 - 0.01).toFixed(2);
+    const shipSel = document.getElementById('shipping');
+    const buyerShip = parseFloat(shipSel?.selectedOptions[0]?.dataset.buyer || '0') || 0;
+    const gesamt = Math.floor((total * (1 - (parseFloat(disc.value) || 0) / 100) + 0.01) * 2) / 2 - 0.01;
+    price.value = Math.max(0.99, gesamt - buyerShip).toFixed(2);
   });
 
   // Gesamtpreis für den Käufer live anzeigen

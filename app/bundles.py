@@ -158,6 +158,8 @@ def create_draft(item_ids: list[str], price: float | None = None, hint: str | No
         if d["listing_type"] != "FixedPriceItem":
             raise ValueError(f"„{d['title']}“ ist eine Auktion und kann nicht gebündelt werden.")
     total = sum(d["price"] for d in details)
+    # Vergleichsbasis für den Käufer: Einzelpreise INKL. ihres jeweiligen Versands
+    total_incl = sum(d["price"] + (d.get("shipping_cost") or 0.0) for d in details)
     worst = max(details, key=lambda d: CONDITION_RANK.index(d["condition_id"])
                 if d["condition_id"] in CONDITION_RANK else len(CONDITION_RANK))
     first = details[0]
@@ -208,8 +210,9 @@ def create_draft(item_ids: list[str], price: float | None = None, hint: str | No
         planned_total = round(article_price + buyer_cost, 2)
     draft = {
         "title": _suggest_title(details),
-        "discount": round((1 - price / total) * 100) if price and total else 10,
+        "discount": round((1 - planned_total / total_incl) * 100) if total_incl else 10,
         "total": round(total, 2),
+        "total_incl": round(total_incl, 2),
         "price": article_price,
         "planned_total": planned_total,
         "usk18": bool(usk18),
@@ -316,7 +319,10 @@ def save_draft(bundle_id: int, form: dict) -> dict:
     d = b["draft"]
     d["title"] = form["title"].strip()[:80]
     d["price"] = round(float(form["price"].replace(",", ".")), 2)
-    d["discount"] = float(form.get("discount") or d["discount"])
+    try:
+        d["discount"] = float(str(form.get("discount") or d["discount"]).replace(",", "."))
+    except ValueError:
+        pass
     d["description"] = form["description"]
     d["category_id"] = form["category_id"]
     d["condition_id"] = form["condition_id"]
