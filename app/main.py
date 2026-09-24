@@ -11,7 +11,7 @@ from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, Redirect
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 
-from . import advisor, ai, bundles, meta, config, db, ebay_account, ebay_auth, ebay_orders, ebay_trading, market, promotions, settings, sync, traffic, wawi
+from . import advisor, ai, bundles, meta, review, config, db, ebay_account, ebay_auth, ebay_orders, ebay_trading, market, promotions, settings, sync, traffic, wawi
 
 log = logging.getLogger("ebay-manager")
 templates = Jinja2Templates(directory=config.BASE_DIR / "app" / "templates")
@@ -48,6 +48,7 @@ async def lifespan(app: FastAPI):
     traffic.init()
     ebay_orders.init()
     meta.init()
+    review.init()
     task = asyncio.create_task(_auto_sync())
     yield
     task.cancel()
@@ -288,6 +289,7 @@ def suggestions(request: Request, fehler: str = ""):
         for b in a["result"]["buendel"]:  # Marge immer mit aktuellen WaWi-Daten
             b["marge"] = wawi.bundle_margin(b["item_ids"], b["preis"])
     return templates.TemplateResponse(request, "suggestions.html", {
+        "reviews": review.all_reviews(), "review_key": review.key,
         "a": a, "running": advisor.state["running"], "step": advisor.state.get("step", ""), "listings": listings,
         "ai_enabled": ai.enabled(), "fehler": fehler,
         "total": len(fixed), "checked": sum(1 for l in fixed if l["item_id"] in checks),
@@ -479,3 +481,15 @@ async def promo_action(id: str = Form(...), was: str = Form(...)):
     except Exception as exc:
         return _back("/rabatte", fehler=str(exc))
     return _back("/rabatte", info={"pause": "Aktion pausiert.", "resume": "Aktion läuft wieder.", "delete": "Aktion gelöscht."}[was])
+
+
+
+@app.post("/vorschlaege/pruefen")
+async def suggestion_review(request: Request):
+    form = await request.form()
+    try:
+        res = await asyncio.to_thread(review.run, form.getlist("ids"), float(form["preis"]), form.get("name", ""))
+    except Exception as exc:
+        log.exception("Paketprüfung fehlgeschlagen")
+        return JSONResponse({"error": str(exc)}, status_code=500)
+    return JSONResponse({"ok": True, "urteil": res["urteil"]})

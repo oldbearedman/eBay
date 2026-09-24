@@ -32,7 +32,9 @@
   <h2 class="section">Vorgeschlagene Bündel ({{ r.buendel|length }})</h2>
   <div class="suggest-list">
   {% for b in r.buendel %}
-    <form class="card suggestion" method="post" action="/buendel">
+    {% set rv = reviews.get(review_key(b.item_ids)) %}
+    <div class="card suggestion-wrap">
+    <form class="suggestion" method="post" action="/buendel">
       <div class="sg-head">
         <div>
           <span class="status prio-{{ b.prioritaet }}">{{ prio[b.prioritaet] }}</span>
@@ -71,8 +73,48 @@
       <input type="hidden" name="hinweis" value="{{ b.name }}{% if b.verkaufsargument %} – {{ b.verkaufsargument }}{% endif %}">
       {% set gone = b.item_ids|reject("in", listings)|list %}
       {% if gone %}<p class="warn small">{{ gone|length }} Artikel davon ist nicht mehr aktiv (verkauft oder schon gebündelt).</p>
-      {% else %}<button class="btn">Als Bündel-Entwurf anlegen</button>{% endif %}
+      {% else %}
+        <div class="sg-actions">
+          <button class="btn">Als Bündel-Entwurf anlegen</button>
+          <button type="button" class="btn secondary review-btn" data-name="{{ b.name }}">🔍 {% if rv %}Erneut{% else %}Nochmal genau{% endif %} prüfen</button>
+        </div>
+      {% endif %}
     </form>
+
+    {% if rv %}
+    <div class="review verdict-{{ rv.urteil }}">
+      <p class="review-head"><strong>{{ {"buendeln": "✅ Bündeln lohnt sich", "anpassen": "🔧 Bündeln – aber anpassen", "einzeln_lassen": "✋ Lieber einzeln lassen"}[rv.urteil] }}</strong>
+        <span class="muted small">· Risiko {{ rv.risiko }} · geprüft {{ rv.created_at[:16]|replace("T", " ") }}</span></p>
+      <p>{{ rv.fazit }}</p>
+      <div class="two">
+        <div><strong class="ok">Pro</strong><ul class="small">{% for x in rv.pro %}<li>{{ x }}</li>{% endfor %}</ul></div>
+        <div><strong class="error">Contra</strong><ul class="small">{% for x in rv.contra %}<li>{{ x }}</li>{% endfor %}</ul></div>
+      </div>
+      <div class="table-scroll"><table class="listings review-items"><tbody>
+      {% for e in rv.einzelartikel %}
+        <tr>
+          <td class="small">{{ rv.titel.get(e.item_id, e.item_id)[:60] }}</td>
+          <td class="small nowrap">{{ {"im_paket": "📦 ins Paket", "lassen": "👍 so lassen", "anheben": "⬆️ anheben", "senken": "⬇️ senken"}[e.empfehlung] }}
+            {% if e.preis and e.empfehlung in ("anheben", "senken") %}auf <strong>{{ "%.2f"|format(e.preis)|replace(".", ",") }} €</strong>
+              <span class="muted">(jetzt {{ "%.2f"|format(rv.preis_jetzt.get(e.item_id, 0))|replace(".", ",") }} €)</span>{% endif %}</td>
+          <td class="small muted">{{ e.grund }}</td>
+          <td class="nowrap">{% if e.empfehlung in ("anheben", "senken") %}<a class="icon-btn" href="/markt/{{ e.item_id }}">Preis ändern</a>{% endif %}</td>
+        </tr>
+      {% endfor %}
+      </tbody></table></div>
+      {% if rv.urteil != "einzeln_lassen" and rv.empfohlener_preis %}
+      <form method="post" action="/buendel" class="review-apply">
+        {% for i in rv.empfohlene_item_ids %}<input type="hidden" name="ids" value="{{ i }}">{% endfor %}
+        <input type="hidden" name="preis" value="{{ rv.empfohlener_preis }}">
+        <input type="hidden" name="hinweis" value="{{ b.name }}{% if b.verkaufsargument %} – {{ b.verkaufsargument }}{% endif %}">
+        <span>Empfehlung: <strong>{{ rv.empfohlene_item_ids|length }} Artikel für {{ "%.2f"|format(rv.empfohlener_preis)|replace(".", ",") }} €</strong>
+          {% if rv.pruefung and rv.pruefung.gewinn is defined %}<span class="small ok"> · Gewinn {{ "%.2f"|format(rv.pruefung.gewinn)|replace(".", ",") }} €</span>{% endif %}</span>
+        <button class="btn">So als Entwurf anlegen</button>
+      </form>
+      {% endif %}
+    </div>
+    {% endif %}
+    </div>
   {% else %}
     <p class="muted">Keine Bündel vorgeschlagen.</p>
   {% endfor %}
@@ -113,8 +155,25 @@
 </script>
 {% endif %}
 <script>
-document.querySelectorAll('form.suggestion').forEach(f => f.addEventListener('submit', () => {
-  const b = f.querySelector('button'); b.disabled = true; b.textContent = 'Erstelle Entwurf, Collage & Texte …';
+document.querySelectorAll('form.suggestion, form.review-apply').forEach(f => f.addEventListener('submit', () => {
+  const b = f.querySelector('button.btn:not(.secondary)');
+  setTimeout(() => { b.disabled = true; b.textContent = 'Erstelle Entwurf, Collage & Texte …'; }, 0);
+}));
+document.querySelectorAll('.review-btn').forEach(btn => btn.addEventListener('click', async () => {
+  const f = btn.closest('form');
+  const data = new FormData();
+  f.querySelectorAll('input[name="ids"]').forEach(i => data.append('ids', i.value));
+  data.append('preis', f.querySelector('input[name="preis"]').value);
+  data.append('name', btn.dataset.name);
+  btn.disabled = true;
+  btn.textContent = '🔍 Opus prüft gründlich … (1–3 Min.)';
+  try {
+    const r = await (await fetch('/vorschlaege/pruefen', {method: 'POST', body: data})).json();
+    if (r.error) throw new Error(r.error);
+    location.reload();
+  } catch (e) {
+    btn.disabled = false; btn.textContent = 'Fehler – nochmal versuchen'; btn.title = e.message;
+  }
 }));
 </script>
 {% endblock %}

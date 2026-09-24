@@ -350,3 +350,16 @@ h2.section { font-size: 18px; margin: 32px 0 14px; }
 
 .status.typ { background: var(--neutral-soft); color: var(--text); margin-left: 4px; }
 .pitch { font-style: italic; color: var(--muted); margin: 4px 0 0 !important; }
+
+/* ── Genaue Prüfung ────────────────────────────────────────────── */
+.suggestion-wrap { display: flex; flex-direction: column; }
+.sg-actions { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 4px; }
+.review { margin-top: 16px; padding: 14px 16px; border-radius: var(--radius-sm); border-left: 4px solid var(--accent); background: var(--surface-2); font-size: 14px; }
+.review.verdict-buendeln { border-left-color: var(--ok); background: var(--ok-soft); }
+.review.verdict-anpassen { border-left-color: var(--warn); background: var(--warn-soft); }
+.review.verdict-einzeln_lassen { border-left-color: var(--error); background: var(--error-soft); }
+.review p { margin: 6px 0; }
+.review .review-head { margin-top: 0; }
+.review ul { margin: 4px 0 8px; padding-left: 18px; }
+.review-items td { padding: 6px 8px; background: transparent !important; }
+.review-apply { display: flex; align-items: center; justify-content: space-between; gap: 10px; flex-wrap: wrap; margin-top: 8px; }
