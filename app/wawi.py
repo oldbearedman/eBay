@@ -208,8 +208,16 @@ def auto_link() -> dict:
             if s > best_listing_for.get(p["produktnr"], (0, ""))[0]:
                 best_listing_for[p["produktnr"]] = (s, iid)
 
+    # Offene Claude-Vorschläge nicht überschreiben; jeden WaWi-Artikel höchstens einmal vorschlagen
+    claude_kept = {iid for iid, r in linked.items() if r["method"] == "claude" and not r["confirmed"]}
+    suggested = {linked[i]["produktnr"] for i in claude_kept}
+    todo.sort(key=lambda l: -(scores[l["item_id"]][0][0] if scores[l["item_id"]] else 0))
     for l in todo:
-        row = scores[l["item_id"]]
+        if l["item_id"] in claude_kept:
+            stats["titel"] += 1
+            continue
+        row = [(s, p) for s, p in scores[l["item_id"]]
+               if p["produktnr"] not in taken and p["produktnr"] not in suggested]
         if not row or row[0][0] < 0.45:
             stats["offen"] += 1
             continue
@@ -217,13 +225,14 @@ def auto_link() -> dict:
         s2 = row[1][0] if len(row) > 1 else 0.0
         mutual = best_listing_for.get(p1["produktnr"], (0, ""))[1] == l["item_id"]
         rare = {t for t in _tokens(l["title"]) & _tokens(p1["artikel"]) if wawi_df[t] == 1 and ebay_df[t] == 1}
-        sure = p1["produktnr"] not in taken and mutual and (rare or s1 >= 0.9 or (s1 >= 0.7 and s1 - s2 >= 0.25))
+        sure = mutual and (rare or s1 >= 0.9 or (s1 >= 0.7 and s1 - s2 >= 0.25))
         if sure:
             save(l["item_id"], p1["produktnr"], "eindeutig", round(min(s1, 1.0), 2), 1)
             taken.add(p1["produktnr"])
             stats["eindeutig"] += 1
         elif s1 >= 0.55:
             save(l["item_id"], p1["produktnr"], "titel", round(min(s1, 1.0), 2), 0)
+            suggested.add(p1["produktnr"])
             stats["titel"] += 1
         else:
             stats["offen"] += 1

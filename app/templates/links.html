@@ -32,7 +32,7 @@
       <button class="btn">Markierte bestätigen</button>
     </span>
   </div>
-  <table class="listings">
+  <div class="table-scroll"><table class="listings link-table">
     <thead><tr><th class="check"><input type="checkbox" id="all" aria-label="Alle markieren"></th><th>eBay-Angebot</th><th>WaWi-Artikel</th><th class="r">Treffer</th></tr></thead>
     <tbody>
     {% for s in suggestions %}
@@ -40,9 +40,9 @@
         <td class="check"><input type="checkbox" name="ok" value="{{ s.item_id }}"></td>
         <td class="title"><a href="{{ s.url }}" target="_blank" rel="noopener">{{ s.title }}</a><span class="muted id">{{ "%.2f"|format(s.price)|replace(".", ",") }} €</span></td>
         <td>
-          <select name="p_{{ s.item_id }}">
+          <select name="p_{{ s.item_id }}" class="link-select">
             {% for score, c in s.cands %}
-              <option value="{{ c.produktnr }}" {% if c.produktnr == s.produktnr %}selected{% endif %}>{{ c.artikel }} · EK {{ "%.2f"|format(c.ek)|replace(".", ",") }} € · {{ c.produktnr }}</option>
+              <option value="{{ c.produktnr }}" {% if c.produktnr == s.produktnr %}selected{% endif %}>{{ c.artikel }} · EK {{ "%.2f"|format(c.ek)|replace(".", ",") }} € · {{ c.status }} · {{ c.produktnr }}</option>
             {% endfor %}
           </select>
         </td>
@@ -50,7 +50,7 @@
       </tr>
     {% endfor %}
     </tbody>
-  </table>
+  </table></div>
 </form>
 {% endif %}
 

@@ -74,7 +74,7 @@
     <h2>Günstigste vergleichbare Angebote <span class="muted small">(gleiche Vollständigkeit & ähnlicher Zustand)</span></h2>
     <a class="btn secondary" href="{{ m.sold_url }}" target="_blank" rel="noopener">Verkaufte bei eBay ansehen ↗</a>
   </div>
-  <table class="listings">
+  <div class="table-scroll"><table class="listings">
     <thead><tr><th></th><th>Angebot</th><th>Zustand</th><th class="r">Preis</th><th class="r">Versand</th><th class="r">Gesamt</th></tr></thead>
     <tbody>
     {% for s in m.samples %}
@@ -90,7 +90,7 @@
       <tr><td colspan="6" class="empty">Keine vergleichbaren Angebote gefunden.</td></tr>
     {% endfor %}
     </tbody>
-  </table>
+  </table></div>
   <p class="muted small">Suche: „{{ m.query.lstrip("~") }}“ · geprüft {{ m.checked_at[:16]|replace("T", " ") }} UTC ·
     <button class="linkish" type="button" data-recheck="{{ l.item_id }}">neu prüfen</button></p>
 </div>

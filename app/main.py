@@ -315,15 +315,17 @@ def links_page(request: Request, info: str = "", fehler: str = ""):
     with db.connect() as con:
         listings = {r["item_id"]: dict(r) for r in con.execute("SELECT * FROM listings WHERE active = 1")}
         rows = {r["item_id"]: dict(r) for r in con.execute("SELECT * FROM wawi_links")}
+    taken = {r["produktnr"] for r in rows.values() if r["confirmed"]}
+    free = {k: v for k, v in prods.items() if k not in taken}
     suggestions, open_ = [], []
     for iid, l in listings.items():
         r = rows.get(iid)
         if r and r["confirmed"]:
             continue
         if r:
-            cands = wawi.candidates(l["title"], prods)
-            if r["produktnr"] not in [c["produktnr"] for _, c in cands] and r["produktnr"] in prods:
-                cands.insert(0, (r["score"], prods[r["produktnr"]]))
+            cands = wawi.candidates(l["title"], free, n=8)
+            if r["produktnr"] not in [c["produktnr"] for _, c in cands] and r["produktnr"] in free:
+                cands.insert(0, (r["score"], free[r["produktnr"]]))
             suggestions.append({**l, "produktnr": r["produktnr"], "score": r["score"] or 0, "cands": cands,
                                 "method": r["method"]})
         else:
@@ -357,15 +359,27 @@ async def links_confirm(request: Request):
         with db.connect() as con:
             chosen |= {r["item_id"] for r in con.execute(
                 "SELECT item_id FROM wawi_links WHERE confirmed = 0 AND score >= ?", (float(form["min_score"]),))}
+    with db.connect() as con:
+        taken = {r["produktnr"]: r["item_id"] for r in con.execute(
+            "SELECT item_id, produktnr FROM wawi_links WHERE confirmed = 1")}
+    done, conflicts = 0, []
     for iid in chosen:
         pnr = form.get(f"p_{iid}")
         if not pnr:
             with db.connect() as con:
                 r = con.execute("SELECT produktnr FROM wawi_links WHERE item_id = ?", (iid,)).fetchone()
             pnr = r["produktnr"] if r else None
-        if pnr:
-            wawi.link(iid, pnr)
-    return _back("/zuordnung", info=f"{len(chosen)} Zuordnungen bestätigt.")
+        if not pnr:
+            continue
+        if pnr in taken and taken[pnr] != iid:
+            conflicts.append(pnr)
+            continue
+        wawi.link(iid, pnr)
+        taken[pnr] = iid
+        done += 1
+    return _back("/zuordnung", info=f"{done} Zuordnungen bestätigt.",
+                 fehler=(f"{len(conflicts)} übersprungen – der WaWi-Artikel ist schon einem anderen Angebot zugeordnet: "
+                         + ", ".join(conflicts)) if conflicts else "")
 
 
 # ── Einstellungen ───────────────────────────────────────────────────────

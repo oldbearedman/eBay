@@ -340,3 +340,10 @@ h2.section { font-size: 18px; margin: 32px 0 14px; }
 .settings-form label { display: block; margin-bottom: 20px; font-weight: 700; }
 .settings-form input { display: block; margin-top: 5px; width: 150px; }
 .steps { padding-left: 20px; } .steps li { margin: 18px 0; }
+
+/* Tabellen innerhalb von Karten: bleiben in der Karte, scrollen notfalls seitlich */
+.table-scroll { overflow-x: auto; margin: 12px -8px 0; padding: 0 8px; }
+.card .table-scroll .listings { margin-top: 0; }
+.link-table td.title { min-width: 260px; width: 42%; }
+.link-table td.title a { display: block; }
+.link-select { width: 100%; min-width: 240px; max-width: 520px; }

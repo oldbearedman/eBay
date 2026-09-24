@@ -31,7 +31,7 @@
     <h2>{{ preview|length }} Artikel · ab {{ qty }} Stück {{ pct|int }} % Rabatt</h2>
     <span class="muted small">🟢 gut · 🟡 knapp · 🟠 Abverkauf · 🔴 zu viel Minus (vorab abgewählt) · ⚪ keine WaWi-Daten</span>
   </div>
-  <table class="listings">
+  <div class="table-scroll"><table class="listings">
     <thead><tr><th class="check"><input type="checkbox" id="all" checked aria-label="Alle"></th><th></th><th>Artikel</th>
       <th class="r">Preis</th><th class="r">mit Rabatt</th><th class="r">Gewinn</th></tr></thead>
     <tbody>
@@ -49,7 +49,7 @@
       <tr><td colspan="6" class="empty">Keine passenden Angebote.</td></tr>
     {% endfor %}
     </tbody>
-  </table>
+  </table></div>
   {% if preview %}
   <div class="promo-grid" style="margin-top:16px">
     <label>Name der Aktion<input name="name" value="{{ pct|int }} % Rabatt ab {{ qty }} Artikeln{% if q %} – {{ q }}{% endif %}" maxlength="90" required></label>
