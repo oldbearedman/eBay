@@ -13,8 +13,9 @@ BADGE = (0, 100, 210)
 
 
 def _large(url: str) -> str:
-    # eBay-Bildadressen enden auf s-l<Größe>.<ext> – größte Variante anfordern
-    return re.sub(r"s-l\d+\.", "s-l1600.", url)
+    # eBay liefert je nach Adresse kleine Vorschaubilder – größte Variante (1600 px) anfordern
+    url = re.sub(r"s-l\d+\.", "s-l1600.", url)
+    return re.sub(r"\$_\d+\.", "$_57.", url)
 
 
 def _fetch(url: str) -> Image.Image:
@@ -42,7 +43,7 @@ def build(image_urls: list[str]) -> bytes:
         x = GAP + c * (cell_w + GAP) + offset
         y = GAP + r * (cell_h + GAP)
         img = _fetch(url)
-        img.thumbnail((cell_w, cell_h), Image.LANCZOS)
+        img = ImageOps.contain(img, (cell_w, cell_h), Image.LANCZOS)  # skaliert auch hoch
         canvas.paste(img, (x + (cell_w - img.width) // 2, y + (cell_h - img.height) // 2))
         # Nummern-Plakette oben links
         cx, cy = x + rad + 8, y + rad + 8
