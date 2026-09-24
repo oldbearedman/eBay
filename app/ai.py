@@ -50,9 +50,12 @@ def plain_text(desc_html: str, limit: int = 2000) -> str:
     return text[:limit]
 
 
-def write_bundle_text(sources: list[dict], price: float) -> dict:
+def write_bundle_text(sources: list[dict], price: float, hint: str | None = None) -> dict:
     """sources: [{title, condition, specifics, description}] → {title, description_html}"""
-    lines = [f"Bündelpreis: {price:.2f} €".replace(".", ","), f"Anzahl Artikel: {len(sources)}", ""]
+    lines = [f"Bündelpreis: {price:.2f} €".replace(".", ","), f"Anzahl Artikel: {len(sources)}"]
+    if hint:
+        lines.append(f"Paketidee (bitte aufgreifen, z. B. „Trilogie“, „Rätsel-Paket“): {hint}")
+    lines.append("")
     for i, s in enumerate(sources, 1):
         lines += [
             f"### Artikel {i}",

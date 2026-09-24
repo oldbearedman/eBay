@@ -199,6 +199,11 @@ def sold_search_url(query: str, category_id: str | None = None) -> str:
 
 def check(item_id: str) -> dict:
     details = ebay_trading.item_details(item_id)
+    try:
+        from . import meta
+        meta.save(meta.from_details(details))
+    except Exception:
+        pass
     query, must, plat_tokens = build_query(details)
     condition = "NEW" if details["condition_id"] in ("1000", "1500") else "USED"
     filters = [

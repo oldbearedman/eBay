@@ -347,3 +347,6 @@ h2.section { font-size: 18px; margin: 32px 0 14px; }
 .link-table td.title { min-width: 260px; width: 42%; }
 .link-table td.title a { display: block; }
 .link-select { width: 100%; min-width: 240px; max-width: 520px; }
+
+.status.typ { background: var(--neutral-soft); color: var(--text); margin-left: 4px; }
+.pitch { font-style: italic; color: var(--muted); margin: 4px 0 0 !important; }

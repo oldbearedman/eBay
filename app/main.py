@@ -11,7 +11,7 @@ from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, Redirect
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 
-from . import advisor, ai, bundles, config, db, ebay_account, ebay_auth, ebay_orders, ebay_trading, market, promotions, settings, sync, traffic, wawi
+from . import advisor, ai, bundles, meta, config, db, ebay_account, ebay_auth, ebay_orders, ebay_trading, market, promotions, settings, sync, traffic, wawi
 
 log = logging.getLogger("ebay-manager")
 templates = Jinja2Templates(directory=config.BASE_DIR / "app" / "templates")
@@ -47,6 +47,7 @@ async def lifespan(app: FastAPI):
     wawi.init()
     traffic.init()
     ebay_orders.init()
+    meta.init()
     task = asyncio.create_task(_auto_sync())
     yield
     task.cancel()
@@ -138,7 +139,7 @@ async def bundle_create(request: Request):
         return _back("/", fehler="Bitte mindestens zwei Angebote auswählen.")
     price = float(form["preis"]) if form.get("preis") else None
     try:
-        bundle_id = await asyncio.to_thread(bundles.create_draft, ids, price)
+        bundle_id = await asyncio.to_thread(bundles.create_draft, ids, price, form.get("hinweis") or None)
     except Exception as exc:
         log.exception("Bündel-Entwurf fehlgeschlagen")
         return _back("/", fehler=str(exc))
@@ -287,7 +288,7 @@ def suggestions(request: Request, fehler: str = ""):
         for b in a["result"]["buendel"]:  # Marge immer mit aktuellen WaWi-Daten
             b["marge"] = wawi.bundle_margin(b["item_ids"], b["preis"])
     return templates.TemplateResponse(request, "suggestions.html", {
-        "a": a, "running": advisor.state["running"], "listings": listings,
+        "a": a, "running": advisor.state["running"], "step": advisor.state.get("step", ""), "listings": listings,
         "ai_enabled": ai.enabled(), "fehler": fehler,
         "total": len(fixed), "checked": sum(1 for l in fixed if l["item_id"] in checks),
     })
@@ -304,7 +305,7 @@ def suggestions_start():
 
 @app.get("/vorschlaege/status")
 def suggestions_status():
-    return JSONResponse({"running": advisor.state["running"]})
+    return JSONResponse({"running": advisor.state["running"], "step": advisor.state.get("step", "")})
 
 
 # ── WaWi-Zuordnung ──────────────────────────────────────────────────────

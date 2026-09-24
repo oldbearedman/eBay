@@ -142,7 +142,7 @@ def _sku(details: list[dict]) -> str | None:
     return joined if len(joined) <= 50 else f"{skus[0]}+{len(details) - 1}weitere"[:50]
 
 
-def create_draft(item_ids: list[str], price: float | None = None) -> int:
+def create_draft(item_ids: list[str], price: float | None = None, hint: str | None = None) -> int:
     details = [ebay_trading.item_details(i) for i in item_ids]
     for d in details:
         if d["listing_type"] != "FixedPriceItem":
@@ -178,10 +178,11 @@ def create_draft(item_ids: list[str], price: float | None = None) -> int:
             for d in details
         ],
         "text_by": "vorlage",
+        "hint": hint,
     }
     if ai.enabled():
         try:
-            draft.update(ai.write_bundle_text(draft["sources"], draft["price"]), text_by="claude")
+            draft.update(ai.write_bundle_text(draft["sources"], draft["price"], hint), text_by="claude")
         except Exception as exc:
             log.exception("Claude-Text fehlgeschlagen")
             draft["ai_error"] = str(exc)[:300]
@@ -208,7 +209,7 @@ def rewrite_text(bundle_id: int) -> None:
     """Titel und Beschreibung neu von Claude schreiben lassen."""
     b = get(bundle_id)
     d = b["draft"]
-    d.update(ai.write_bundle_text(d["sources"], d["price"]), text_by="claude")
+    d.update(ai.write_bundle_text(d["sources"], d["price"], d.get("hint")), text_by="claude")
     d.pop("ai_error", None)
     _update(bundle_id, draft=json.dumps(d, ensure_ascii=False))
 

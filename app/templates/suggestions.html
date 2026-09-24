@@ -15,9 +15,10 @@
   {% if checked < total %}<br><strong>Tipp:</strong> Erst „Alle Marktpreise prüfen“ laufen lassen – bisher haben {{ checked }} von {{ total }} Angeboten einen Marktwert.{% endif %}</p>
 
 {% if not a %}
-  <div class="card empty-state"><p>Noch keine Analyse.</p><p class="muted">Dauert etwa 1–3 Minuten und kostet grob 0,20–0,60 $.</p></div>
+  <div class="card empty-state"><p>Noch keine Analyse.</p><p class="muted">Dauert etwa 3–8 Minuten und kostet grob 0,50–1,50 $.</p></div>
 {% elif a.status == "laeuft" %}
-  <div class="card empty-state" id="running"><p>Claude analysiert gerade deinen Bestand …</p><p class="muted">Die Seite aktualisiert sich automatisch.</p></div>
+  <div class="card empty-state" id="running"><p>Claude analysiert gerade deinen Bestand …</p>
+    <p class="muted"><span id="step">{{ step }}</span> · die Seite aktualisiert sich automatisch.</p></div>
 {% elif a.status == "fehler" %}
   <p class="banner error">Die letzte Analyse ist fehlgeschlagen: {{ a.error }}</p>
 {% else %}
@@ -35,11 +36,15 @@
       <div class="sg-head">
         <div>
           <span class="status prio-{{ b.prioritaet }}">{{ prio[b.prioritaet] }}</span>
+          {% if b.typ %}<span class="status typ">{{ {"reihe": "📚 Spielreihe", "franchise": "🌌 Franchise", "thema": "🎯 Themen-Paket", "zugpferd": "🐎 Zugpferd", "sonstiges": "🧩 Sonstiges"}.get(b.typ, b.typ) }}</span>{% endif %}
+          {% if b.plattform %}<span class="status typ">{{ b.plattform }}</span>{% endif %}
           <h3>{{ b.name }}</h3>
+          {% if b.verkaufsargument %}<p class="pitch">„{{ b.verkaufsargument }}“</p>{% endif %}
         </div>
         <div class="sg-price">
           <span class="num">{{ "%.2f"|format(b.preis)|replace(".", ",") }} €</span>
           <span class="muted small">einzeln {{ "%.2f"|format(b.summe_einzeln)|replace(".", ",") }} €</span>
+          {% if b.pruefung and b.pruefung.anteil_marktwert_prozent %}<span class="muted small">{{ b.pruefung.anteil_marktwert_prozent }} % vom Marktwert</span>{% endif %}
         </div>
       </div>
       <ul class="sg-items">
@@ -57,9 +62,11 @@
           {% if mg.porto_saved > 0 %}<span class="muted"> · {{ "%.2f"|format(mg.porto_saved)|replace(".", ",") }} € Porto gespart</span>{% endif %}
         </p>
       {% elif mg %}<p class="muted small">Marge unbekannt ({{ mg.missing|length }} Artikel ohne WaWi-Zuordnung)</p>{% endif %}
+      {% if b.pruefung and b.pruefung.probleme %}<p class="small warn">⚠️ {{ b.pruefung.probleme|join(" · ") }}</p>{% endif %}
       <p><strong>Warum:</strong> {{ b.begruendung }}</p>
       <p><strong>Strategie:</strong> {{ b.strategie }}</p>
       <input type="hidden" name="preis" value="{{ b.preis }}">
+      <input type="hidden" name="hinweis" value="{{ b.name }}{% if b.verkaufsargument %} – {{ b.verkaufsargument }}{% endif %}">
       {% set gone = b.item_ids|reject("in", listings)|list %}
       {% if gone %}<p class="warn small">{{ gone|length }} Artikel davon ist nicht mehr aktiv (verkauft oder schon gebündelt).</p>
       {% else %}<button class="btn">Als Bündel-Entwurf anlegen</button>{% endif %}
@@ -97,6 +104,7 @@
 (function poll() {
   setTimeout(async () => {
     const s = await (await fetch('/vorschlaege/status')).json();
+    const el = document.getElementById('step'); if (el && s.step) el.textContent = s.step;
     if (s.running) poll(); else location.reload();
   }, 5000);
 })();
