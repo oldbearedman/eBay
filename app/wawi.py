@@ -139,7 +139,7 @@ def porto_rule(n: int, value: float, usk18: bool) -> tuple[float, str]:
     if n == 1 and value <= settings.get("limit_einzeln"):
         return settings.get("porto_einzeln"), ("1 Spiel über „Alter“ KP" if usk18 else "1 Spiel")
     if not usk18 and n <= 2 and value <= settings.get("limit_zwei"):
-        return settings.get("porto_zwei"), "2 Spiele"
+        return settings.get("porto_zwei"), ("2 Spiele" if n == 2 else "1 Spiel über 10 €")
     if n <= settings.get("max_kp_artikel") and value <= settings.get("limit_kp"):
         return settings.get("porto_kp"), ("Kleinpaket über „Alter“ KP" if usk18 else "Kleinpaket")
     return settings.get("porto_paket"), ("Paket über „Alter“ KP" if usk18 else "DHL-Paket (kostenlos für den Käufer)")

@@ -173,7 +173,7 @@ def create_draft(item_ids: list[str], price: float | None = None, hint: str | No
             free = [p for p in fast if p["buyer_cost"] == 0 and "paket" in p["service"].lower() and not p["age_check"]]
             if free:
                 cur = free[0]
-        elif kind in ("1 Spiel", "2 Spiele"):
+        elif kind.startswith(("1 Spiel", "2 Spiele")):
             # Brief-Versand: Profil des ersten Artikels behalten, falls es ein Brief ist, sonst ein Brief-Profil
             if not (cur and "brief" in cur["service"].lower()):
                 brief = [p for p in fast if "brief" in p["service"].lower() and not p["age_check"]]
