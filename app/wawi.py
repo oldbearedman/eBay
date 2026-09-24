@@ -124,12 +124,13 @@ USK18_RE = re.compile(r"\b(USK|FSK)\s?-?\s?18\b|ab 18", re.I)
 
 
 def is_usk18(item_ids: list[str]) -> bool:
-    """Enthält das Paket ein Ü18-Spiel? (USK-Merkmal aus dem Steckbrief, sonst Titel)"""
+    """Enthält das Paket ein Ü18-Spiel? USK-Merkmal, Titel – oder der Artikel wird einzeln schon mit
+    Altersprüfung („Alter“ KP) verschickt (dann hat der Händler ihn selbst als Ü18 eingestuft)."""
     with db.connect() as con:
         q = ",".join("?" * len(item_ids))
-        rows = con.execute(f"""SELECT l.title, m.usk FROM listings l LEFT JOIN item_meta m USING(item_id)
+        rows = con.execute(f"""SELECT l.title, m.usk, m.age_ship FROM listings l LEFT JOIN item_meta m USING(item_id)
                                WHERE l.item_id IN ({q})""", item_ids).fetchall()
-    return any("18" in (r["usk"] or "") or USK18_RE.search(r["title"] or "") for r in rows)
+    return any("18" in (r["usk"] or "") or USK18_RE.search(r["title"] or "") or r["age_ship"] for r in rows)
 
 
 def porto_rule(n: int, value: float, usk18: bool) -> tuple[float, str]:

@@ -19,6 +19,7 @@ CREATE TABLE IF NOT EXISTS item_meta (
     publisher  TEXT,
     complete   TEXT,          -- cib | teil | NULL
     usk        TEXT,
+    age_ship   INTEGER,       -- 1 = Einzelangebot wird mit Altersprüfung verschickt („Alter“ KP)
     condition  TEXT,
     category   TEXT,
     updated_at TEXT NOT NULL
@@ -34,8 +35,11 @@ SERIES_STOP = {"the", "der", "die", "das", "a", "an", "of", "und", "and", "editi
 def init() -> None:
     with db.connect() as con:
         con.executescript(SCHEMA)
-        if "usk" not in {r["name"] for r in con.execute("PRAGMA table_info(item_meta)")}:
+        cols = {r["name"] for r in con.execute("PRAGMA table_info(item_meta)")}
+        if "usk" not in cols:
             con.execute("ALTER TABLE item_meta ADD COLUMN usk TEXT")
+        if "age_ship" not in cols:
+            con.execute("ALTER TABLE item_meta ADD COLUMN age_ship INTEGER")
 
 
 def from_details(d: dict) -> dict:
@@ -52,15 +56,25 @@ def from_details(d: dict) -> dict:
         "publisher": (spec.get("Herausgeber") or spec.get("Marke") or [None])[0],
         "complete": market.completeness(d["title"]),
         "usk": ", ".join(spec.get("USK-Einstufung") or []) or None,
+        "age_ship": _age_profile(d.get("shipping_profile")),
         "condition": d.get("condition_name"), "category": d.get("category_name"),
     }
+
+
+def _age_profile(profile_id: str | None) -> int | None:
+    """1, wenn das Versandprofil des Einzelangebots eine Altersprüfung hat („Alter“ KP)."""
+    if not profile_id:
+        return None
+    from . import ebay_account
+    p = ebay_account.profile_by_id(profile_id)
+    return int(bool(p and p["age_check"])) if p else None
 
 
 def save(m: dict) -> None:
     with db.connect() as con:
         con.execute(
-            """INSERT OR REPLACE INTO item_meta(item_id, platform, name, genre, publisher, complete, usk, condition, category, updated_at)
-               VALUES (:item_id, :platform, :name, :genre, :publisher, :complete, :usk, :condition, :category, :updated_at)""",
+            """INSERT OR REPLACE INTO item_meta(item_id, platform, name, genre, publisher, complete, usk, age_ship, condition, category, updated_at)
+               VALUES (:item_id, :platform, :name, :genre, :publisher, :complete, :usk, :age_ship, :condition, :category, :updated_at)""",
             {**m, "updated_at": db.now_iso()})
 
 
@@ -69,7 +83,7 @@ def refresh_missing(force: bool = False) -> int:
     with db.connect() as con:
         ids = [r["item_id"] for r in con.execute(
             """SELECT l.item_id FROM listings l LEFT JOIN item_meta m USING(item_id)
-               WHERE l.active = 1 AND (m.item_id IS NULL OR m.updated_at < '2026-09-25' OR ?)""", (int(force),))]
+               WHERE l.active = 1 AND (m.item_id IS NULL OR m.age_ship IS NULL OR ?)""", (int(force),))]
     for iid in ids:
         try:
             save(from_details(ebay_trading.item_details(iid)))
