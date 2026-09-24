@@ -1,0 +1,82 @@
+{% extends "base.html" %}
+{% block title %}Marktwert · {{ l.title }}{% endblock %}
+{% block content %}
+<p><a href="/">← Angebote</a></p>
+{% if info %}<p class="banner ok">{{ info }}</p>{% endif %}
+{% if fehler %}<p class="banner error">{{ fehler }}</p>{% endif %}
+
+<div class="market-head card">
+  {% if l.image_url %}<img src="{{ l.image_url }}" alt="">{% endif %}
+  <div>
+    <h1>{{ l.title }}</h1>
+    <p class="muted small">#{{ l.item_id }}{% if l.sku %} · {{ l.sku }}{% endif %} · <a href="{{ l.url }}" target="_blank" rel="noopener">bei eBay ansehen</a></p>
+  </div>
+</div>
+
+{% if not m %}
+  <div class="card"><p>Noch nicht geprüft.</p>
+    <button class="btn" type="button" data-recheck="{{ l.item_id }}">Marktpreis jetzt prüfen</button></div>
+{% else %}
+<div class="market-grid">
+  <div class="card kpi"><span class="lbl">Dein Preis inkl. Versand</span><span class="num">{{ "%.2f"|format(m.own_price)|replace(".", ",") }} €</span>
+    <span class="muted small">{% if m.own_shipping %}davon Versand {{ "%.2f"|format(m.own_shipping)|replace(".", ",") }} €{% else %}Versand kostenlos{% endif %}</span></div>
+  <div class="card kpi"><span class="lbl">Ø der 5 günstigsten Konkurrenten</span><span class="num">{% if m.avg5 %}{{ "%.2f"|format(m.avg5)|replace(".", ",") }} €{% else %}–{% endif %}</span>
+    <span class="muted small">{{ m.found }} vergleichbare Angebote · Median {% if m.median %}{{ "%.2f"|format(m.median)|replace(".", ",") }} €{% else %}–{% endif %}</span></div>
+  <div class="card kpi verdict-{{ m.verdict }}"><span class="lbl">Einschätzung</span><span class="num small-num">{{ m.label }}</span>
+    {% if m.rough %}<span class="muted small">grobe Schätzung – kein exakt gleicher Artikel</span>{% endif %}</div>
+</div>
+
+{% if m.suggestion %}
+<form class="card suggest" method="post" action="/markt/{{ l.item_id }}/preis" id="priceform">
+  <div>
+    <strong>Preisvorschlag:</strong> {{ "%.2f"|format(m.suggestion)|replace(".", ",") }} € Artikelpreis
+    <span class="muted small">– damit liegst du inkl. Versand knapp unter dem Schnitt der günstigsten Konkurrenz.</span>
+  </div>
+  <div class="row">
+    <input name="preis" value="{{ '%.2f'|format(m.suggestion) }}" inputmode="decimal" aria-label="Neuer Preis">
+    <button class="btn">Preis bei eBay ändern</button>
+  </div>
+</form>
+{% endif %}
+
+<div class="card">
+  <div class="bundle-head">
+    <h2>Günstigste vergleichbare Angebote <span class="muted small">(aktuell, andere Verkäufer)</span></h2>
+    <a class="btn secondary" href="{{ m.sold_url }}" target="_blank" rel="noopener">Verkaufte bei eBay ansehen ↗</a>
+  </div>
+  <table class="listings">
+    <thead><tr><th></th><th>Angebot</th><th>Zustand</th><th class="r">Preis</th><th class="r">Versand</th><th class="r">Gesamt</th></tr></thead>
+    <tbody>
+    {% for s in m.samples %}
+      <tr>
+        <td class="thumb">{% if s.image %}<img src="{{ s.image }}" alt="" loading="lazy">{% endif %}</td>
+        <td class="title"><a href="{{ s.url }}" target="_blank" rel="noopener">{{ s.title }}</a></td>
+        <td class="small">{{ s.condition }}</td>
+        <td class="r nowrap">{{ "%.2f"|format(s.price)|replace(".", ",") }} €</td>
+        <td class="r nowrap">{% if s.shipping %}{{ "%.2f"|format(s.shipping)|replace(".", ",") }} €{% else %}<span class="muted">frei</span>{% endif %}</td>
+        <td class="r nowrap"><strong>{{ "%.2f"|format(s.total)|replace(".", ",") }} €</strong></td>
+      </tr>
+    {% else %}
+      <tr><td colspan="6" class="empty">Keine vergleichbaren Angebote gefunden.</td></tr>
+    {% endfor %}
+    </tbody>
+  </table>
+  <p class="muted small">Suche: „{{ m.query.lstrip("~") }}“ · geprüft {{ m.checked_at[:16]|replace("T", " ") }} UTC ·
+    <button class="linkish" type="button" data-recheck="{{ l.item_id }}">neu prüfen</button></p>
+</div>
+{% endif %}
+{% endblock %}
+
+{% block scripts %}
+<script>
+document.querySelectorAll('[data-recheck]').forEach(b => b.addEventListener('click', async () => {
+  b.disabled = true; b.textContent = 'prüfe …';
+  await fetch(`/markt/${b.dataset.recheck}`, {method: 'POST'});
+  location.reload();
+}));
+const pf = document.getElementById('priceform');
+if (pf) pf.addEventListener('submit', e => {
+  if (!confirm(`Preis bei eBay wirklich auf ${pf.preis.value} € ändern?`)) e.preventDefault();
+});
+</script>
+{% endblock %}

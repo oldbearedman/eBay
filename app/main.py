@@ -7,11 +7,11 @@ from datetime import datetime, timezone
 from urllib.parse import quote
 
 from fastapi import FastAPI, Form, HTTPException, Request
-from fastapi.responses import FileResponse, HTMLResponse, RedirectResponse
+from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 
-from . import ai, bundles, config, db, ebay_account, ebay_auth, sync
+from . import ai, bundles, config, db, ebay_account, ebay_auth, ebay_trading, market, sync
 
 log = logging.getLogger("ebay-manager")
 templates = Jinja2Templates(directory=config.BASE_DIR / "app" / "templates")
@@ -23,6 +23,7 @@ SORTS = {
     "preis_auf": "price ASC",
     "beobachter": "watch_count DESC",
     "titel": "title COLLATE NOCASE ASC",
+    "markt": "start_time ASC",  # wird in Python nach Marktabstand sortiert
 }
 
 
@@ -41,6 +42,7 @@ async def _auto_sync():
 async def lifespan(app: FastAPI):
     db.init()
     bundles.init()
+    market.init()
     task = asyncio.create_task(_auto_sync())
     yield
     task.cancel()
@@ -68,10 +70,14 @@ def index(request: Request, sort: str = "alter", q: str = "", fehler: str = ""):
             (f"%{q}%",),
         ).fetchall()
         last = con.execute("SELECT * FROM sync_log ORDER BY id DESC LIMIT 1").fetchone()
-    listings = [{**dict(r), "days": _days_online(r["start_time"])} for r in rows]
+    checks = market.all_checks()
+    listings = [{**dict(r), "days": _days_online(r["start_time"]), "m": checks.get(r["item_id"])} for r in rows]
+    if sort == "markt":
+        listings.sort(key=lambda l: -(l["m"]["diff_pct"] if l["m"] and l["m"]["diff_pct"] is not None else -999))
     total = sum(l["price"] * max(l["quantity"], 1) for l in listings)
     return templates.TemplateResponse(request, "index.html", {
         "listings": listings, "sort": sort, "q": q, "last": last, "total": total, "fehler": fehler,
+        "job": market.job,
     })
 
 
@@ -192,3 +198,51 @@ async def bundle_action(request: Request, bundle_id: int):
     except Exception as exc:
         log.exception("Bündel-Aktion %s fehlgeschlagen", action)
         return _back(url, fehler=str(exc))
+
+
+# ── Marktwert ───────────────────────────────────────────────────────────
+
+@app.post("/markt/alle")
+async def market_all():
+    if not market.job["running"]:
+        asyncio.get_running_loop().run_in_executor(None, market.check_all)
+    return JSONResponse(market.job)
+
+
+@app.get("/markt/status")
+def market_status():
+    return JSONResponse(market.job)
+
+
+@app.post("/markt/{item_id}")
+async def market_check(item_id: str):
+    try:
+        return JSONResponse(await asyncio.to_thread(market.check, item_id))
+    except Exception as exc:
+        log.exception("Marktcheck fehlgeschlagen")
+        return JSONResponse({"error": str(exc)}, status_code=500)
+
+
+@app.get("/markt/{item_id}", response_class=HTMLResponse)
+def market_detail(request: Request, item_id: str, info: str = "", fehler: str = ""):
+    with db.connect() as con:
+        listing = con.execute("SELECT * FROM listings WHERE item_id = ?", (item_id,)).fetchone()
+    if not listing:
+        raise HTTPException(404)
+    return templates.TemplateResponse(request, "market.html", {
+        "l": dict(listing), "m": market.all_checks().get(item_id), "info": info, "fehler": fehler,
+    })
+
+
+@app.post("/markt/{item_id}/preis")
+async def market_set_price(item_id: str, preis: str = Form(...)):
+    url = f"/markt/{item_id}"
+    try:
+        new = round(float(preis.replace(",", ".")), 2)
+        await asyncio.to_thread(ebay_trading.revise_price, item_id, new)
+        with db.connect() as con:
+            con.execute("UPDATE listings SET price = ? WHERE item_id = ?", (new, item_id))
+        await asyncio.to_thread(market.check, item_id)
+    except Exception as exc:
+        return _back(url, fehler=str(exc))
+    return _back(url, info=f"Preis bei eBay auf {new:.2f} € geändert.".replace(".", ","))

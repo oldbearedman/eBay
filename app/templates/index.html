@@ -14,13 +14,18 @@
       {% endif %}
     </div>
   </div>
-  <form method="post" action="/abgleichen"><button class="btn secondary">Jetzt abgleichen</button></form>
+  <div class="toolbar-actions">
+    <button type="button" class="btn secondary" id="checkall" data-running="{{ 1 if job.running else 0 }}" {% if job.running %}disabled{% endif %}>
+      {% if job.running %}Marktcheck läuft … {{ job.done }}/{{ job.total }}{% else %}Alle Marktpreise prüfen{% endif %}
+    </button>
+    <form method="post" action="/abgleichen"><button class="btn secondary">Jetzt abgleichen</button></form>
+  </div>
 </section>
 
 <form class="filters" method="get">
   <input type="search" name="q" value="{{ q }}" placeholder="Titel durchsuchen …">
   <select name="sort" onchange="this.form.submit()">
-    {% for key, label in [("alter","Am längsten online"),("neu","Neueste zuerst"),("beobachter","Meiste Beobachter"),("preis_ab","Preis absteigend"),("preis_auf","Preis aufsteigend"),("titel","Titel A–Z")] %}
+    {% for key, label in [("alter","Am längsten online"),("neu","Neueste zuerst"),("beobachter","Meiste Beobachter"),("preis_ab","Preis absteigend"),("preis_auf","Preis aufsteigend"),("titel","Titel A–Z"),("markt","Am teuersten ggü. Markt")] %}
       <option value="{{ key }}" {% if sort == key %}selected{% endif %}>{{ label }}</option>
     {% endfor %}
   </select>
@@ -30,7 +35,7 @@
 <div class="table-wrap">
 <table class="listings">
   <thead>
-    <tr><th class="check"></th><th></th><th>Artikel</th><th class="r">Preis</th><th class="r">Menge</th><th class="r">Beobachter</th><th class="r">Online seit</th></tr>
+    <tr><th class="check"></th><th></th><th>Artikel</th><th class="r">Preis</th><th class="r">Menge</th><th class="r">Beobachter</th><th class="r">Online seit</th><th>Markt</th></tr>
   </thead>
   <tbody>
   {% for l in listings %}
@@ -48,9 +53,15 @@
       <td class="r">{{ l.quantity }}</td>
       <td class="r">{% if l.watch_count %}<span class="pill">{{ l.watch_count }}</span>{% else %}<span class="muted">0</span>{% endif %}</td>
       <td class="r nowrap {% if l.days is not none and l.days > 60 %}warn{% endif %}">{% if l.days is not none %}{{ l.days }}&nbsp;Tage{% endif %}</td>
+      <td class="market nowrap">
+        {% if l.listing_type == "FixedPriceItem" %}
+          {% if l.m %}<a class="mk mk-{{ l.m.verdict }}" href="/markt/{{ l.item_id }}" title="{{ l.m.label }}">{% if l.m.diff_pct is not none %}{{ "%+d"|format(l.m.diff_pct) }}&nbsp;%{% else %}–{% endif %}{% if l.m.rough %}<sup>~</sup>{% endif %}</a>{% endif %}
+          <button type="button" class="icon-btn" data-check="{{ l.item_id }}" title="Marktpreis prüfen">{% if l.m %}↻{% else %}Prüfen{% endif %}</button>
+        {% endif %}
+      </td>
     </tr>
   {% else %}
-    <tr><td colspan="7" class="empty">Keine Angebote gefunden.</td></tr>
+    <tr><td colspan="8" class="empty">Keine Angebote gefunden.</td></tr>
   {% endfor %}
   </tbody>
 </table>
@@ -67,6 +78,7 @@
 {% endblock %}
 
 {% block scripts %}
+<script src="/static/market.js"></script>
 <script>
 (() => {
   const boxes = [...document.querySelectorAll('input[name="ids"]')];

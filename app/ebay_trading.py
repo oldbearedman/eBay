@@ -137,7 +137,14 @@ def item_details(item_id: str) -> dict:
         "postal_code": _t(it, "e:PostalCode"),
         "country": _t(it, "e:Country") or "DE",
         "specifics": specifics,
+        "shipping_cost": _first_float(it, "e:ShippingDetails/e:ShippingServiceOptions/e:ShippingServiceCost"),
+        "ean": _t(it, "e:ProductListingDetails/e:EAN"),
     }
+
+
+def _first_float(el: ET.Element, path: str) -> float | None:
+    v = _t(el, path)
+    return float(v) if v else None
 
 
 def build_item_xml(d: dict) -> str:

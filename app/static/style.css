@@ -117,3 +117,30 @@ details { margin-bottom: 16px; } summary { cursor: pointer; color: var(--accent)
 .notes { margin: -6px 0 16px; padding-left: 18px; font-size: 13px; color: var(--muted); }
 .text-source { display: flex; align-items: center; justify-content: space-between; gap: 8px; flex-wrap: wrap; margin-bottom: 12px; }
 .small-btn { padding: 5px 10px; font-size: 13px; }
+
+/* ── Marktwert ─────────────────────────────────────────────────── */
+.toolbar-actions { display: flex; gap: 8px; flex-wrap: wrap; }
+.market { min-width: 110px; }
+.mk { display: inline-block; font-weight: 700; font-size: 13px; padding: 2px 8px; border-radius: 999px; margin-right: 4px; }
+.mk:hover { text-decoration: none; filter: brightness(1.1); }
+.mk-teuer { background: #fde7e7; color: var(--error); }
+.mk-ok { background: #e3f5e8; color: var(--ok); }
+.mk-guenstig { background: var(--pill); color: var(--accent); }
+.mk-keine { background: var(--border); color: var(--muted); }
+@media (prefers-color-scheme: dark) { .mk-teuer { background: #3a1c1c; } .mk-ok { background: #173222; } }
+.icon-btn { font: inherit; font-size: 12px; color: var(--accent); background: none; border: 1px solid var(--border);
+  border-radius: 6px; padding: 2px 7px; cursor: pointer; }
+.icon-btn:disabled { opacity: .5; }
+.linkish { font: inherit; color: var(--accent); background: none; border: 0; padding: 0; cursor: pointer; }
+.market-head { display: flex; gap: 16px; align-items: center; margin-bottom: 16px; }
+.market-head img { width: 88px; height: 88px; object-fit: cover; border-radius: 8px; }
+.market-head h1 { font-size: 19px; margin: 0 0 4px; }
+.market-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 16px; margin-bottom: 16px; }
+@media (max-width: 760px) { .market-grid { grid-template-columns: minmax(0, 1fr); } }
+.kpi { display: flex; flex-direction: column; gap: 4px; padding: 18px; }
+.small-num { font-size: 17px; }
+.verdict-teuer .small-num { color: var(--error); } .verdict-ok .small-num { color: var(--ok); } .verdict-guenstig .small-num { color: var(--accent); }
+.suggest { display: flex; justify-content: space-between; align-items: center; gap: 16px; flex-wrap: wrap; margin-bottom: 16px; }
+.suggest .row input { width: 110px; }
+.card h2 { font-size: 16px; margin: 0; }
+.card .listings { margin-top: 12px; }
