@@ -210,6 +210,12 @@ def create_draft(item_ids: list[str], price: float | None = None, hint: str | No
         except Exception as exc:
             log.exception("Claude-Text fehlgeschlagen")
             draft["ai_error"] = str(exc)[:300]
+    # Hauptbild je Artikel (Fallback: Vorschaubild aus der Übersicht) – Collage VOR dem Speichern bauen
+    with db.connect() as con:
+        thumbs = {r["item_id"]: r["image_url"] for r in con.execute(
+            f"SELECT item_id, image_url FROM listings WHERE item_id IN ({','.join('?' * len(item_ids))})", item_ids)}
+    main_pics = [(d["pictures"][0] if d["pictures"] else d["image_url"]) or thumbs.get(d["item_id"]) for d in details]
+    img = collage.build(main_pics)
     now = db.now_iso()
     with db.connect() as con:
         cur = con.execute(
@@ -222,9 +228,8 @@ def create_draft(item_ids: list[str], price: float | None = None, hint: str | No
                 """INSERT INTO bundle_items(bundle_id, position, item_id, title, price, quantity, sku, image_url, condition)
                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)""",
                 (bundle_id, pos, d["item_id"], d["title"], d["price"], d["quantity"], d["sku"],
-                 d["pictures"][0] if d["pictures"] else d["image_url"], d["condition_name"]),
+                 main_pics[pos - 1], d["condition_name"]),
             )
-    img = collage.build([d["pictures"][0] if d["pictures"] else d["image_url"] for d in details])
     (COLLAGE_DIR / f"{bundle_id}.jpg").write_bytes(img)
     return bundle_id
 

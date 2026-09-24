@@ -18,11 +18,17 @@ def _large(url: str) -> str:
     return re.sub(r"\$_\d+\.", "$_57.", url)
 
 
-def _fetch(url: str) -> Image.Image:
-    r = httpx.get(_large(url), timeout=30, follow_redirects=True)
-    r.raise_for_status()
-    img = Image.open(io.BytesIO(r.content))
-    return ImageOps.exif_transpose(img).convert("RGB")
+def _fetch(url: str | None) -> Image.Image:
+    """Bild laden – fehlt es oder ist es nicht abrufbar, gibt es einen neutralen Platzhalter."""
+    if not url:
+        return Image.new("RGB", (600, 800), (235, 238, 245))
+    try:
+        r = httpx.get(_large(url), timeout=30, follow_redirects=True)
+        r.raise_for_status()
+        img = Image.open(io.BytesIO(r.content))
+        return ImageOps.exif_transpose(img).convert("RGB")
+    except Exception:
+        return Image.new("RGB", (600, 800), (235, 238, 245))
 
 
 def build(image_urls: list[str]) -> bytes:
