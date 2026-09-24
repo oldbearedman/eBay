@@ -29,8 +29,8 @@
 <div class="market-grid">
   <div class="card kpi"><span class="lbl">Dein Preis inkl. Versand</span><span class="num">{{ "%.2f"|format(m.own_price)|replace(".", ",") }} €</span>
     <span class="muted small">{% if m.own_shipping %}davon Versand {{ "%.2f"|format(m.own_shipping)|replace(".", ",") }} €{% else %}Versand kostenlos{% endif %}</span></div>
-  <div class="card kpi"><span class="lbl">Marktpreis (vergleichbare Angebote)</span><span class="num">{% if m.avg5 %}{{ "%.2f"|format(m.avg5)|replace(".", ",") }} €{% else %}–{% endif %}</span>
-    <span class="muted small">{{ m.found }} vergleichbar{% if m.excluded %} ({{ m.excluded }} mit schlechterem Zustand / unvollständig aussortiert){% endif %} · Median {% if m.median %}{{ "%.2f"|format(m.median)|replace(".", ",") }} €{% else %}–{% endif %}</span></div>
+  <div class="card kpi"><span class="lbl">Marktpreis (Median vergleichbarer Angebote)</span><span class="num">{% if m.avg5 %}{{ "%.2f"|format(m.avg5)|replace(".", ",") }} €{% else %}–{% endif %}</span>
+    <span class="muted small">Schnellverkauf ab ca. {{ "%.2f"|format(m.quick_price or m.avg5)|replace(".", ",") }} € · {{ m.found }} vergleichbar{% if m.excluded %} ({{ m.excluded }} mit schlechterem Zustand / unvollständig aussortiert){% endif %} · Median {% if m.median %}{{ "%.2f"|format(m.median)|replace(".", ",") }} €{% else %}–{% endif %}</span></div>
   <div class="card kpi verdict-{{ m.verdict }}"><span class="lbl">Einschätzung</span><span class="num small-num">{{ m.label }}</span>
     {% if m.rough %}<span class="muted small">grobe Schätzung – kein exakt gleicher Artikel</span>{% endif %}</div>
 </div>
@@ -60,7 +60,7 @@
 <form class="card suggest" method="post" action="/markt/{{ l.item_id }}/preis" id="priceform">
   <div>
     <strong>Preisvorschlag:</strong> {{ "%.2f"|format(m.suggestion)|replace(".", ",") }} € Artikelpreis
-    <span class="muted small">– damit liegst du inkl. Versand knapp unter dem Schnitt der günstigsten Konkurrenz.</span>
+    <span class="muted small">– für einen schnellen Verkauf: inkl. Versand im günstigen Drittel der vergleichbaren Angebote.</span>
   </div>
   <div class="row">
     <input name="preis" value="{{ '%.2f'|format(m.suggestion) }}" inputmode="decimal" aria-label="Neuer Preis">

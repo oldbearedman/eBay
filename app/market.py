@@ -53,6 +53,8 @@ def init() -> None:
             con.execute("ALTER TABLE market_checks ADD COLUMN own_sales TEXT NOT NULL DEFAULT '[]'")
         if "excluded" not in cols:
             con.execute("ALTER TABLE market_checks ADD COLUMN excluded INTEGER NOT NULL DEFAULT 0")
+        if "quick_price" not in cols:
+            con.execute("ALTER TABLE market_checks ADD COLUMN quick_price REAL")
 
 
 def _norm(s: str) -> str:
@@ -113,11 +115,11 @@ def build_query(details: dict) -> tuple[str, list[str], list[str]]:
     spec = details["specifics"]
     name = (spec.get("Spielname") or [None])[0]
     plat = bundles.PLATFORM_SHORT.get((spec.get("Plattform") or [None])[0] or "")
-    if not name:
-        # Kein Merkmal „Spielname“: Name und Plattform aus dem Titel lesen
-        tplat, _ = _title_platform(details["title"])
-        if tplat:
-            name, plat = _name_from_title(details["title"]), plat or tplat
+    tplat, _ = _title_platform(details["title"])
+    if not plat:
+        plat = tplat or _title_platform(" ".join(spec.get("Plattform") or []))[0]
+    if not name and tplat:
+        name = _name_from_title(details["title"])   # kein Merkmal „Spielname“: aus dem Titel lesen
     if name and plat:
         query = f"{name} {plat}".strip()
         must = [w for w in _norm(name).split() if (len(w) > 1 or w.isdigit()) and w not in ("the", "of", "und", "and")]
@@ -240,13 +242,9 @@ def check(item_id: str) -> dict:
     all_offers = sorted(seen.values(), key=lambda o: o["total"])
     offers = [o for o in all_offers if _comparable(o, own_complete, own_rank)]
     totals = [o["total"] for o in offers]
-    # Marktpreis = unteres Drittel der vergleichbaren Angebote (robust gegen Ausreißer nach unten)
-    if len(totals) >= 5:
-        ref = totals[int(len(totals) * 0.3)]
-    elif totals:
-        ref = statistics.median(totals)
-    else:
-        ref = None
+    # Marktpreis = Median der vergleichbaren Angebote; Schnellverkauf = unteres Drittel
+    ref = statistics.median(totals) if totals else None
+    quick = totals[int(len(totals) * 0.3)] if len(totals) >= 5 else (totals[0] if totals else None)
     own_ship = details.get("shipping_cost") or 0.0
     result = {
         "item_id": item_id,
@@ -261,13 +259,14 @@ def check(item_id: str) -> dict:
         "samples": json.dumps(offers[:8], ensure_ascii=False),
         "own_sales": json.dumps(own_sales(item_id, details["title"]), ensure_ascii=False),
         "excluded": len(all_offers) - len(offers),
+        "quick_price": round(quick, 2) if quick else None,
     }
     with db.connect() as con:
         con.execute(
             """INSERT OR REPLACE INTO market_checks(item_id, checked_at, query, found, avg5, min_price, median,
-                   own_price, own_shipping, samples, own_sales, excluded)
+                   own_price, own_shipping, samples, own_sales, excluded, quick_price)
                VALUES (:item_id, :checked_at, :query, :found, :avg5, :min_price, :median,
-                   :own_price, :own_shipping, :samples, :own_sales, :excluded)""",
+                   :own_price, :own_shipping, :samples, :own_sales, :excluded, :quick_price)""",
             result,
         )
     return describe(result, details["category_id"])
@@ -287,7 +286,7 @@ def own_sales(item_id: str, title: str) -> list[dict]:
                     out.append({"date": r["verkauft_am"], "price": r["vk"], "source": "WaWi", "title": r["artikel"]})
         for o in ebay_orders.all_orders():
             for li in o["items"]:
-                if li["item_id"] != item_id and wawi._score(title, li["title"]) >= 0.85:
+                if li["item_id"] == item_id or wawi._score(title, li["title"]) >= 0.85:
                     out.append({"date": o["date"], "price": li["price"] + li["shipping"], "source": "eBay", "title": li["title"]})
     except Exception:
         pass
@@ -318,7 +317,9 @@ def describe(row: dict, category_id: str | None = None) -> dict:
     diff = (row["own_price"] - ref) / ref * 100
     out["diff_pct"] = round(diff)
     ship = row.get("own_shipping") or 0.0
-    out["suggestion"] = max(0.99, bundles.suggest_price(ref - ship, 3)) if ref - ship > 1 else None
+    quick = row.get("quick_price") or ref
+    out["quick_price"] = quick
+    out["suggestion"] = max(0.99, bundles.suggest_price(quick - ship, 3)) if quick - ship > 1 else None
     proven = out["sold_avg"] and row["own_price"] <= out["sold_avg"] * 1.1
     if proven:
         out.update(verdict="ok", label=f"bewährt – schon {len(sold_prices)}× für Ø {out['sold_avg']:.2f} € verkauft".replace(".", ","))
