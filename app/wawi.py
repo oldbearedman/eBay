@@ -138,34 +138,95 @@ def candidates(title: str, prods: dict[str, dict], n: int = 5) -> list[tuple[flo
     return [(round(s, 2), p) for s, p in scored[:n] if s > 0.3]
 
 
+# Wörter, die nichts über den Artikel aussagen (für die Eindeutigkeitsprüfung)
+FILLER = {
+    "pal", "de", "cib", "ovp", "neu", "sealed", "komplett", "getestet", "deutsch", "uncut", "usk", "fsk",
+    "edition", "game", "spiel", "spiele", "the", "of", "and", "und", "der", "die", "das", "mit", "ohne",
+    "anleitung", "handbuch", "hülle", "disc", "discs", "cd", "dvd", "version", "sony", "playstation",
+    "microsoft", "nintendo", "sega", "xbox", "classic", "platinum", "essentials", "hits", "collection",
+    "gut", "sehr", "zustand", "inkl", "nur", "b", "o", "a", "for", "für", "vom", "von", "im", "in",
+}
+
+
+def _tokens(s: str) -> set[str]:
+    return {t for t in _norm(s).split()
+            if len(t) >= 4 and t not in FILLER and not PLATFORM_RE.fullmatch(t) and not t.isdigit()}
+
+
 def auto_link() -> dict:
-    """Ordnet aktive eBay-Angebote zu: SKU/eBay-Nr. sicher, Titel nur als Vorschlag (bestätigen)."""
+    """Ordnet aktive eBay-Angebote WaWi-Artikeln zu.
+
+    Sicher (ohne Rückfrage):
+      - gleiche SKU bzw. gespeicherte eBay-Artikelnummer
+      - „eindeutig“: Angebot und WaWi-Artikel sind gegenseitig der beste Treffer, die Plattform passt,
+        und sie teilen ein markantes Wort, das es in der WaWi (offene Artikel) UND bei eBay nur je einmal gibt
+        (z. B. „Giants“) – oder die Titel sind nahezu gleich.
+    Alles andere wird nur vorgeschlagen (Titel-Ähnlichkeit) und muss bestätigt werden.
+    """
+    from collections import Counter
+
     prods = products()
     by_item = {p["ebay_artikelnr"]: p for p in prods.values() if p["ebay_artikelnr"]}
     now = db.now_iso()
-    stats = {"sku": 0, "ebay_nr": 0, "titel": 0, "offen": 0}
+    stats = {"sku": 0, "ebay_nr": 0, "eindeutig": 0, "titel": 0, "offen": 0}
     with db.connect() as con:
-        linked = {r["item_id"]: r for r in con.execute("SELECT * FROM wawi_links")}
-        taken = {r["produktnr"] for r in linked.values() if r["confirmed"]}
-        for l in con.execute("SELECT item_id, sku, title FROM listings WHERE active = 1").fetchall():
-            if l["item_id"] in linked and linked[l["item_id"]]["confirmed"]:
-                continue
-            if l["sku"] and l["sku"] in prods:
-                method, pnr, score, ok = "sku", l["sku"], 1.0, 1
-            elif l["item_id"] in by_item:
-                method, pnr, score, ok = "ebay_nr", by_item[l["item_id"]]["produktnr"], 1.0, 1
-            else:
-                cands = [(s, p) for s, p in candidates(l["title"], prods) if p["produktnr"] not in taken]
-                if not cands or cands[0][0] < 0.55:
-                    stats["offen"] += 1
-                    continue
-                method, pnr, score, ok = "titel", cands[0][1]["produktnr"], cands[0][0], 0
-            stats[method] += 1
+        linked = {r["item_id"]: dict(r) for r in con.execute("SELECT * FROM wawi_links")}
+        listings = con.execute("SELECT item_id, sku, title FROM listings WHERE active = 1").fetchall()
+
+    def save(iid, pnr, method, score, ok):
+        with db.connect() as con:
             con.execute(
                 """INSERT OR REPLACE INTO wawi_links(item_id, produktnr, method, score, confirmed, updated_at)
-                   VALUES (?, ?, ?, ?, ?, ?)""", (l["item_id"], pnr, method, score, ok, now))
-            if ok:
-                taken.add(pnr)
+                   VALUES (?, ?, ?, ?, ?, ?)""", (iid, pnr, method, score, ok, now))
+
+    taken = {r["produktnr"] for r in linked.values() if r["confirmed"]}
+    todo = []
+    for l in listings:
+        if l["item_id"] in linked and linked[l["item_id"]]["confirmed"]:
+            continue
+        if l["sku"] and l["sku"] in prods:
+            save(l["item_id"], l["sku"], "sku", 1.0, 1); taken.add(l["sku"]); stats["sku"] += 1
+        elif l["item_id"] in by_item:
+            pnr = by_item[l["item_id"]]["produktnr"]
+            save(l["item_id"], pnr, "ebay_nr", 1.0, 1); taken.add(pnr); stats["ebay_nr"] += 1
+        else:
+            todo.append(l)
+
+    pool = [p for p in prods.values() if p["status"] != "Verkauft" and p["produktnr"] not in taken]
+    # Wie oft kommt ein markantes Wort vor – in der WaWi und bei eBay?
+    wawi_df = Counter(t for p in pool for t in _tokens(p["artikel"]))
+    ebay_df = Counter(t for l in listings for t in _tokens(l["title"]))
+
+    # Bewertungsmatrix; „Inseriert“ in der WaWi ist ein kleiner Pluspunkt
+    scores: dict[str, list[tuple[float, dict]]] = {}
+    for l in todo:
+        row = [(_score(l["title"], p["artikel"]) + (0.03 if p["status"] == "Inseriert" else 0), p) for p in pool]
+        scores[l["item_id"]] = sorted(row, key=lambda x: -x[0])[:5]
+    best_listing_for: dict[str, tuple[float, str]] = {}
+    for iid, row in scores.items():
+        for s, p in row:
+            if s > best_listing_for.get(p["produktnr"], (0, ""))[0]:
+                best_listing_for[p["produktnr"]] = (s, iid)
+
+    for l in todo:
+        row = scores[l["item_id"]]
+        if not row or row[0][0] < 0.45:
+            stats["offen"] += 1
+            continue
+        s1, p1 = row[0]
+        s2 = row[1][0] if len(row) > 1 else 0.0
+        mutual = best_listing_for.get(p1["produktnr"], (0, ""))[1] == l["item_id"]
+        rare = {t for t in _tokens(l["title"]) & _tokens(p1["artikel"]) if wawi_df[t] == 1 and ebay_df[t] == 1}
+        sure = p1["produktnr"] not in taken and mutual and (rare or s1 >= 0.9 or (s1 >= 0.7 and s1 - s2 >= 0.25))
+        if sure:
+            save(l["item_id"], p1["produktnr"], "eindeutig", round(min(s1, 1.0), 2), 1)
+            taken.add(p1["produktnr"])
+            stats["eindeutig"] += 1
+        elif s1 >= 0.55:
+            save(l["item_id"], p1["produktnr"], "titel", round(min(s1, 1.0), 2), 0)
+            stats["titel"] += 1
+        else:
+            stats["offen"] += 1
     return stats
 
 
@@ -246,3 +307,26 @@ def slow_items(item_ids: list[str]) -> list[str]:
                 if age >= days:
                     out.append(iid)
     return out
+
+
+def missing_skus() -> list[tuple[str, str]]:
+    """Fest zugeordnete Angebote, deren eBay-SKU fehlt oder nicht zur WaWi passt: [(item_id, produktnr)]"""
+    with db.connect() as con:
+        rows = con.execute(
+            """SELECT w.item_id, w.produktnr FROM wawi_links w JOIN listings l USING(item_id)
+               WHERE w.confirmed = 1 AND l.active = 1 AND (l.sku IS NULL OR l.sku != w.produktnr)""").fetchall()
+    return [(r["item_id"], r["produktnr"]) for r in rows]
+
+
+def write_skus() -> dict:
+    from . import ebay_trading
+    done, errors = 0, []
+    for iid, pnr in missing_skus():
+        try:
+            ebay_trading.set_sku(iid, pnr)
+            with db.connect() as con:
+                con.execute("UPDATE listings SET sku = ? WHERE item_id = ?", (pnr, iid))
+            done += 1
+        except Exception as exc:
+            errors.append(f"#{iid}: {exc}")
+    return {"done": done, "errors": errors}

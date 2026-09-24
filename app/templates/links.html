@@ -2,15 +2,23 @@
 {% block title %}WaWi-Zuordnung · eBay Manager{% endblock %}
 {% block content %}
 {% if info %}<p class="banner ok">{{ info }}</p>{% endif %}
+{% if fehler %}<p class="banner error">{{ fehler }}</p>{% endif %}
 <div class="bundle-head">
   <h1>Zuordnung zur Warenwirtschaft</h1>
-  <form method="post" action="/zuordnung/auto"><button class="btn secondary">Neu zuordnen</button></form>
+  <span class="toolbar-actions">
+    <form method="post" action="/zuordnung/auto"><button class="btn secondary">Automatisch zuordnen</button></form>
+    {% if ai_enabled %}<form method="post" action="/zuordnung/claude" class="busy-form"><button class="btn secondary">✨ Rest von Claude zuordnen lassen</button></form>{% endif %}
+    {% if missing_skus %}<form method="post" action="/zuordnung/sku" class="busy-form"
+        onsubmit="return confirm('Bei {{ missing_skus }} eBay-Angeboten die WaWi-Produktnummer als SKU eintragen? (Für Käufer unsichtbar)')">
+      <button class="btn">SKU bei {{ missing_skus }} Angeboten eintragen</button></form>{% endif %}
+  </span>
 </div>
 <p class="muted">Damit das Tool Einkaufspreise und Mindestpreise kennt, braucht jedes eBay-Angebot seinen WaWi-Artikel.
   Über die SKU zugeordnete Angebote sind sicher. Titel-Treffer bitte kurz prüfen. Die WaWi wird dabei nur gelesen, nie verändert.</p>
 
 <div class="stats" style="margin: 16px 0">
-  <div><span class="num">{{ counts.sicher }}</span><span class="lbl">sicher zugeordnet</span></div>
+  <div><span class="num">{{ counts.sicher }}</span><span class="lbl">sicher zugeordnet
+    <span class="muted small">({% for m, n in methods.items() %}{{ n }} {{ {"sku": "SKU", "ebay_nr": "eBay-Nr.", "eindeutig": "eindeutig", "titel": "bestätigt", "manuell": "manuell", "claude": "Claude"}.get(m, m) }}{% if not loop.last %}, {% endif %}{% endfor %})</span></span></div>
   <div><span class="num">{{ counts.vorschlag }}</span><span class="lbl">Vorschläge prüfen</span></div>
   <div><span class="num">{{ counts.offen }}</span><span class="lbl">ohne WaWi-Artikel</span></div>
 </div>
@@ -38,7 +46,7 @@
             {% endfor %}
           </select>
         </td>
-        <td class="r"><span class="pill">{{ (s.score * 100)|round|int }} %</span></td>
+        <td class="r">{% if s.method == "claude" %}<span class="pill">✨ Claude</span>{% else %}<span class="pill">{{ (s.score * 100)|round|int }} %</span>{% endif %}</td>
       </tr>
     {% endfor %}
     </tbody>
@@ -57,6 +65,10 @@
 
 {% block scripts %}
 <script>
+document.querySelectorAll('.busy-form').forEach(f => f.addEventListener('submit', e => {
+  const b = f.querySelector('button');
+  setTimeout(() => { if (!e.defaultPrevented) { b.disabled = true; b.textContent = 'Läuft …'; } }, 0);
+}));
 const all = document.getElementById('all');
 if (all) all.addEventListener('change', () => document.querySelectorAll('input[name="ok"]').forEach(b => b.checked = all.checked));
 </script>

@@ -259,3 +259,8 @@ def upload_picture(data: bytes, name: str = "collage.jpg") -> str:
         msg = root.findtext("e:Errors/e:LongMessage", namespaces=NS) or r.text[:300]
         raise EbayError(f"Bild-Upload fehlgeschlagen: {msg}")
     return url
+
+
+def set_sku(item_id: str, sku: str) -> None:
+    """Trägt eine SKU (Lagernummer) am Angebot ein – für Käufer unsichtbar."""
+    call("ReviseFixedPriceItem", f"<Item><ItemID>{escape(item_id)}</ItemID><SKU>{escape(sku)}</SKU></Item>")

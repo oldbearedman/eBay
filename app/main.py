@@ -299,7 +299,7 @@ def suggestions_status():
 # ── WaWi-Zuordnung ──────────────────────────────────────────────────────
 
 @app.get("/zuordnung", response_class=HTMLResponse)
-def links_page(request: Request, info: str = ""):
+def links_page(request: Request, info: str = "", fehler: str = ""):
     prods = wawi.products() if wawi.available() else {}
     with db.connect() as con:
         listings = {r["item_id"]: dict(r) for r in con.execute("SELECT * FROM listings WHERE active = 1")}
@@ -313,21 +313,29 @@ def links_page(request: Request, info: str = ""):
             cands = wawi.candidates(l["title"], prods)
             if r["produktnr"] not in [c["produktnr"] for _, c in cands] and r["produktnr"] in prods:
                 cands.insert(0, (r["score"], prods[r["produktnr"]]))
-            suggestions.append({**l, "produktnr": r["produktnr"], "score": r["score"] or 0, "cands": cands})
+            suggestions.append({**l, "produktnr": r["produktnr"], "score": r["score"] or 0, "cands": cands,
+                                "method": r["method"]})
         else:
             open_.append(l)
     suggestions.sort(key=lambda s: -s["score"])
+    methods = {}
+    for r in rows.values():
+        if r["confirmed"] and r["item_id"] in listings:
+            methods[r["method"]] = methods.get(r["method"], 0) + 1
     counts = {"sicher": sum(1 for r in rows.values() if r["confirmed"] and r["item_id"] in listings),
               "vorschlag": len(suggestions), "offen": len(open_)}
     return templates.TemplateResponse(request, "links.html", {
-        "suggestions": suggestions, "open": open_, "counts": counts, "info": info,
+        "suggestions": suggestions, "open": open_, "counts": counts, "info": info, "fehler": fehler,
+        "methods": methods, "missing_skus": len(wawi.missing_skus()), "ai_enabled": ai.enabled(),
     })
 
 
 @app.post("/zuordnung/auto")
 async def links_auto():
     stats = await asyncio.to_thread(wawi.auto_link)
-    return _back("/zuordnung", info=f"Neu zugeordnet: {stats['sku']} über SKU, {stats['titel']} Vorschläge über den Titel.")
+    return _back("/zuordnung", info=(
+        f"Zugeordnet: {stats['sku']} über SKU, {stats['eindeutig']} eindeutig über den Titel, "
+        f"{stats['titel']} Vorschläge zum Prüfen, {stats['offen']} ohne Treffer."))
 
 
 @app.post("/zuordnung/bestaetigen")
@@ -365,3 +373,23 @@ async def settings_save(request: Request):
         if form.get(key):
             settings.set_value(key, float(str(form[key]).replace(",", ".")))
     return _back("/einstellungen", info="Gespeichert.")
+
+
+
+@app.post("/zuordnung/claude")
+async def links_claude():
+    from . import link_ai
+    try:
+        s = await asyncio.to_thread(link_ai.run)
+    except Exception as exc:
+        log.exception("Claude-Zuordnung fehlgeschlagen")
+        return _back("/zuordnung", fehler=str(exc))
+    return _back("/zuordnung", info=(
+        f"Claude: {s['sicher']} sicher zugeordnet, {s['vorschlag']} Vorschläge zum Prüfen, "
+        f"{s['keiner']} ohne passenden WaWi-Artikel."))
+
+
+@app.post("/zuordnung/sku")
+async def links_sku():
+    r = await asyncio.to_thread(wawi.write_skus)
+    return _back("/zuordnung", info=f"SKU bei {r['done']} Angeboten eingetragen.", fehler=" · ".join(r["errors"][:5]))
