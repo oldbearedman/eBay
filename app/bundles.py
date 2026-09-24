@@ -135,12 +135,21 @@ def _description(details: list[dict]) -> str:
     return "\n".join(parts)
 
 
-def _sku(details: list[dict]) -> str | None:
-    skus = [d["sku"] for d in details if d.get("sku")]
+def compact_sku(skus: list[str]) -> str | None:
+    """Alle Lagernummern in eine eBay-SKU (max. 50 Zeichen): gemeinsames Präfix nur einmal („VID-“)."""
+    skus = [s for s in skus if s]
     if not skus:
         return None
     joined = "+".join(skus)
-    return joined if len(joined) <= 50 else f"{skus[0]}+{len(details) - 1}weitere"[:50]
+    if len(joined) <= 50:
+        return joined
+    prefix = skus[0].split("-")[0] + "-"
+    short = "+".join([skus[0]] + [s[len(prefix):] if s.startswith(prefix) else s for s in skus[1:]])
+    return short if len(short) <= 50 else f"{skus[0]}+{len(skus) - 1}weitere"[:50]
+
+
+def _sku(details: list[dict]) -> str | None:
+    return compact_sku([d["sku"] for d in details if d.get("sku")])
 
 
 def create_draft(item_ids: list[str], price: float | None = None, hint: str | None = None) -> int:
