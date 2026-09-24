@@ -1,6 +1,8 @@
-"""Anbindung an die Warenwirtschaft (nur lesend!) und Margenrechnung.
+"""Anbindung an die Warenwirtschaft und Margenrechnung.
 
-Die WaWi-Datenbank wird ausschließlich im SQLite-Nur-Lese-Modus geöffnet.
+Die WaWi-Datenbank wird ausschließlich im SQLite-Nur-Lese-Modus geöffnet. Einzige Schreibaktion:
+das Feld „Block“ (Konvolut) – und zwar über die WaWi-eigene Schnittstelle /api/rows, damit die WaWi
+neu rechnet und jede Änderung in ihrem Änderungsprotokoll festhält.
 Die Gebühren-/Gewinnformel ist aus der WaWi übernommen, damit beide gleich rechnen.
 """
 import difflib
@@ -12,6 +14,7 @@ import sqlite3
 from . import db, settings
 
 WAWI_DB = os.getenv("WAWI_DB", "/home/papa/warenwirtschaft/warenwirtschaft.db")
+WAWI_URL = os.getenv("WAWI_URL", "http://127.0.0.1:5055")
 
 # ── Gebühren & Gewinn (wie warenwirtschaft/app.py) ─────────────────────
 EBAY_VARIABLE_FEE_RATES = {"Konsolen": 0.07, "Videospiele": 0.12, "Medien": 0.12,
@@ -453,3 +456,52 @@ def sold_rows() -> list[dict]:
     """Verkaufte WaWi-Artikel mit tatsächlichem Verkaufspreis (vk)."""
     return [{"artikel": r.get("artikel", ""), "vk": money(r.get("vk")), "verkauft_am": r.get("verkauft_am", "")}
             for r in _rows() if r.get("status") == "Verkauft" and r.get("vk")]
+
+
+
+# ── Konvolut (Block) in der WaWi setzen – über die WaWi-Schnittstelle ──
+
+def _row_ids(produktnrs: list[str]) -> dict[str, tuple[int, dict]]:
+    con = sqlite3.connect(f"file:{WAWI_DB}?mode=ro", uri=True)  # NUR LESEND
+    try:
+        rows = {}
+        for i, d in con.execute("SELECT id, data FROM rows"):
+            r = json.loads(d)
+            if r.get("produktnr") in produktnrs:
+                rows[r["produktnr"]] = (i, r)
+        return rows
+    finally:
+        con.close()
+
+
+def free_block_name(base: str) -> str:
+    """Freier Block-Name (z. B. „EB12“, notfalls „EB12-2“)."""
+    con = sqlite3.connect(f"file:{WAWI_DB}?mode=ro", uri=True)
+    try:
+        used = {(json.loads(d).get("verkaufsblock") or "").strip() for (d,) in con.execute("SELECT data FROM rows")}
+    finally:
+        con.close()
+    name, n = base, 2
+    while name in used:
+        name, n = f"{base}-{n}", n + 1
+    return name
+
+
+def set_block(produktnrs: list[str], block: str) -> list[str]:
+    """Setzt (oder leert, block="") den Konvolut-Block und prüft danach, ob er wirklich gespeichert ist.
+    Gibt die Produktnummern zurück, bei denen es geklappt hat."""
+    import httpx
+    rows = _row_ids(produktnrs)
+    missing = [p for p in produktnrs if p not in rows]
+    if missing:
+        raise ValueError(f"In der WaWi nicht gefunden: {missing}")
+    locked = [p for p, (_, r) in rows.items() if r.get("status") in ("Verkauft", "Storniert")]
+    if locked:
+        raise ValueError(f"Bereits verkauft/storniert – Block wird nicht geändert: {locked}")
+    r = httpx.post(f"{WAWI_URL}/api/rows",
+                   json={"rows": [{"id": rows[p][0], "verkaufsblock": block} for p in produktnrs]}, timeout=60)
+    r.raise_for_status()
+    if not r.json().get("ok"):
+        raise RuntimeError(f"WaWi hat das Speichern abgelehnt: {r.json()}")
+    check = _row_ids(produktnrs)
+    return [p for p in produktnrs if (check[p][1].get("verkaufsblock") or "").strip() == block]

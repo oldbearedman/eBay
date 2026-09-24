@@ -9,6 +9,7 @@
 
 <div class="bundle-head">
   <h1>Bündel #{{ b.id }} <span class="status s-{{ b.status }}">{{ labels[b.status] }}</span></h1>
+  {% if d.get("wawi_block") %}<span class="status typ">WaWi-Konvolut {{ d.wawi_block }}</span>{% endif %}
   {% if b.new_item_id %}
     <a class="btn secondary" href="https://www.ebay.de/itm/{{ b.new_item_id }}" target="_blank" rel="noopener">Bei eBay ansehen</a>
   {% endif %}

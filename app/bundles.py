@@ -416,6 +416,26 @@ def publish(bundle_id: int) -> dict:
         except Exception as exc:
             problems.append(f"„{it['title']}“: {exc}")
             _append_log(bundle_id, f"#{it['item_id']}: FEHLER {exc}")
+
+    # 5. In der WaWi als Konvolut zusammenfassen (Block „EB<Nr.>“), wenn alle Artikel sicher zugeordnet sind
+    if settings.get("wawi_konvolut") and wawi.available():
+        links = wawi.links()
+        pnrs = [links.get(it["item_id"]) for it in b["items"]]
+        if all(pnrs):
+            try:
+                block = wawi.free_block_name(f"EB{bundle_id}")
+                ok = wawi.set_block(pnrs, block)
+                d = get(bundle_id)["draft"]
+                d["wawi_block"] = block
+                _update(bundle_id, draft=json.dumps(d, ensure_ascii=False))
+                _append_log(bundle_id, f"WaWi: Konvolut „{block}“ gesetzt ({len(ok)}/{len(pnrs)} Artikel)")
+                if len(ok) != len(pnrs):
+                    problems.append(f"WaWi-Konvolut nur bei {len(ok)} von {len(pnrs)} Artikeln gesetzt")
+            except Exception as exc:
+                problems.append(f"WaWi-Konvolut nicht gesetzt: {exc}")
+                _append_log(bundle_id, f"WaWi: FEHLER beim Konvolut: {exc}")
+        else:
+            _append_log(bundle_id, "WaWi: kein Konvolut – nicht alle Artikel sind einem WaWi-Artikel zugeordnet")
     return {**result, "problems": problems}
 
 
@@ -442,6 +462,16 @@ def dissolve(bundle_id: int) -> list[str]:
         except Exception as exc:
             problems.append(f"„{it['title']}“: {exc}")
             _append_log(bundle_id, f"#{it['item_id']}: FEHLER beim Wiedereinstellen: {exc}")
+    # WaWi-Konvolut wieder auflösen
+    block = b["draft"].get("wawi_block")
+    if block and wawi.available():
+        links = wawi.links()
+        pnrs = [p for p in (links.get(it["item_id"]) for it in b["items"]) if p]
+        try:
+            wawi.set_block(pnrs, "")
+            _append_log(bundle_id, f"WaWi: Konvolut „{block}“ aufgelöst")
+        except Exception as exc:
+            problems.append(f"WaWi-Konvolut nicht aufgelöst: {exc}")
     _update(bundle_id, status="aufgeloest")
     return problems
 

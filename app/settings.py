@@ -13,6 +13,7 @@ DEFAULTS = {
     "limit_kp": 25.0,              # … bis zu diesem Warenwert
     "max_kp_artikel": 5,           # … höchstens so viele Artikel
     "porto_paket": 6.99,           # darüber: Paket (kostenlos für den Käufer, im Preis enthalten)
+    "wawi_konvolut": 1,            # 1 = beim Einstellen eines Bündels in der WaWi als Konvolut zusammenfassen
 }
 
 LABELS = {
@@ -27,6 +28,7 @@ LABELS = {
     "limit_kp": ("Kleinpaket bis Warenwert (€)", "Darüber wird als Paket verschickt."),
     "max_kp_artikel": ("Kleinpaket höchstens … Artikel", "Mehr Artikel werden als Paket verschickt."),
     "porto_paket": ("Porto Paket (€)", "Deine Kosten für größere Pakete – für den Käufer kostenlos, im Preis enthalten."),
+    "wawi_konvolut": ("WaWi-Konvolut anlegen (1 = ja, 0 = nein)", "Beim Einstellen eines Bündels die Artikel in der WaWi unter Block „EB<Nr.>“ zusammenfassen."),
 }
 
 
