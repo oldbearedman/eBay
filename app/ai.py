@@ -94,3 +94,166 @@ def write_bundle_text(sources: list[dict], price: float, hint: str | None = None
     if len(title) > 80:
         title = title[:80].rsplit(" ", 1)[0]
     return {"title": title, "description": data["description_html"].strip()}
+
+
+# ── Handy: Artikel auf Fotos erkennen, Einzelangebot schreiben ─────────
+
+IDENTIFY_SYSTEM = """Du hilfst einem gewerblichen eBay.de-Händler für gebrauchte Videospiele, Konsolen und Zubehör.
+Du bekommst Fotos EINES Artikels, eine kurze Zustandsnotiz des Händlers und seine Lagerliste (Warenwirtschaft).
+
+Aufgabe:
+1. Erkenne den Artikel so genau wie möglich: offizieller Titel, Plattform, Edition (z. B. Platinum, Classics,
+   Essentials, Collector's, Steelbook), Region (PAL/NTSC), Sprache/Land, Altersfreigabe (USK-Logo), Genre,
+   Herausgeber, Erscheinungsjahr. Lies eine EAN nur ab, wenn der Barcode mit Ziffern klar lesbar ist – sonst "".
+2. Lieferumfang: Was ist auf den Fotos tatsächlich zu sehen (Hülle, Anleitung, Datenträger/Modul)?
+   Nicht Sichtbares = "unklar", außer die Notiz des Händlers sagt es ausdrücklich.
+3. Zustand: aus Notiz UND Fotos. Die Notiz des Händlers hat Vorrang. Beschreibe nur Sichtbares bzw. Genanntes,
+   sachlich und ohne Beschönigung (z. B. „Disc mit leichten Gebrauchsspuren“, „Hülle mit Riss am Scharnier“).
+4. Lagerliste: Welcher Eintrag ist genau dieser Artikel (gleiches Spiel, gleiche Plattform, passende Edition)?
+   Gib dessen Produktnummer zurück, sonst "". Bei mehreren gleichen Einträgen nimm den ersten.
+   Sicherheit: hoch = eindeutig; mittel = sehr wahrscheinlich; niedrig = geraten; keine = kein Eintrag passt.
+5. Unsicherheiten: alles, was der Händler vor dem Einstellen prüfen sollte (z. B. „Edition nicht erkennbar“).
+6. Suchbegriff für die eBay-Suche nach Vergleichsangeboten: Spielname + Plattform-Kurzform, ohne Füllwörter."""
+
+IDENTIFY_SCHEMA = {
+    "type": "object",
+    "properties": {
+        "erkannt": {"type": "boolean", "description": "false, wenn auf den Fotos kein Artikel eindeutig erkennbar ist"},
+        "artikel_typ": {"type": "string", "enum": ["videospiel", "konsole", "zubehoer", "film_musik", "buch", "sonstiges"]},
+        "name": {"type": "string", "description": "offizieller Titel (deutsche PAL-Fassung, falls vorhanden)"},
+        "plattform": {"type": "string", "description": "Wert aus der Plattform-Liste oder \"\""},
+        "edition": {"type": "string"},
+        "region": {"type": "string", "enum": ["PAL", "NTSC-U/C (US/Canada)", "NTSC-J (Japan)", "unbekannt"]},
+        "sprache": {"type": "string"},
+        "ean": {"type": "string"},
+        "usk": {"type": "string", "enum": ["", "0", "6", "12", "16", "18"]},
+        "umfang": {
+            "type": "object",
+            "properties": {
+                "huelle": {"type": "string", "enum": ["ja", "nein", "unklar"]},
+                "anleitung": {"type": "string", "enum": ["ja", "nein", "unklar"]},
+                "datentraeger": {"type": "string", "enum": ["ja", "nein", "unklar"]},
+                "sonstiges": {"type": "string", "description": "weiteres Sichtbares, z. B. Poster, Karte, Kabel"},
+            },
+            "required": ["huelle", "anleitung", "datentraeger", "sonstiges"],
+            "additionalProperties": False,
+        },
+        "zustand": {"type": "string", "enum": ["neu", "neuwertig", "sehr_gut", "gut", "akzeptabel", "defekt"]},
+        "zustand_details": {"type": "array", "items": {"type": "string"}},
+        "genre": {"type": "string"},
+        "herausgeber": {"type": "string"},
+        "erscheinungsjahr": {"type": "string"},
+        "wawi_produktnr": {"type": "string"},
+        "wawi_sicherheit": {"type": "string", "enum": ["hoch", "mittel", "niedrig", "keine"]},
+        "unsicherheiten": {"type": "array", "items": {"type": "string"}},
+        "suchbegriff": {"type": "string"},
+    },
+    "required": ["erkannt", "artikel_typ", "name", "plattform", "edition", "region", "sprache", "ean", "usk", "umfang",
+                 "zustand", "zustand_details", "genre", "herausgeber", "erscheinungsjahr", "wawi_produktnr",
+                 "wawi_sicherheit", "unsicherheiten", "suchbegriff"],
+    "additionalProperties": False,
+}
+
+
+def _ask(system: str, content: list, schema: dict, effort: str, max_tokens: int = 16000) -> dict:
+    client = anthropic.Anthropic()
+    with client.beta.messages.stream(
+        model=MODEL,
+        max_tokens=max_tokens,
+        system=system,
+        messages=[{"role": "user", "content": content}],
+        output_config={"effort": effort, "format": {"type": "json_schema", "schema": schema}},
+        betas=["server-side-fallback-2026-07-01"],
+        fallbacks="default",
+    ) as stream:
+        response = stream.get_final_message()
+    if response.stop_reason == "refusal":
+        raise RuntimeError("Claude hat die Anfrage abgelehnt.")
+    if response.stop_reason == "max_tokens":
+        raise RuntimeError("Claudes Antwort wurde abgeschnitten.")
+    return json.loads(next(b.text for b in response.content if b.type == "text"))
+
+
+def identify_item(photos: list[bytes], note: str, stock: list[dict], platforms: list[str]) -> dict:
+    """photos: JPEG-Bytes; stock: [{produktnr, artikel, zustand}] (WaWi „Im Lager“) → Steckbrief laut IDENTIFY_SCHEMA."""
+    import base64
+    stock_text = "\n".join(f"{s['produktnr']} | {s['artikel']} | {s['zustand']}" for s in stock) or "(leer)"
+    content = [
+        {"type": "text", "text": "Plattform-Liste (eBay-Werte): " + "; ".join(platforms)
+                                 + "\n\nLagerliste (Produktnr | Artikel | Zustand):\n" + stock_text,
+         "cache_control": {"type": "ephemeral"}},
+    ]
+    for data in photos[:8]:
+        content.append({"type": "image", "source": {"type": "base64", "media_type": "image/jpeg",
+                                                     "data": base64.b64encode(data).decode()}})
+    content.append({"type": "text", "text": f"Zustandsnotiz des Händlers: {note.strip() or '(keine)'}"})
+    return _ask(IDENTIFY_SYSTEM, content, IDENTIFY_SCHEMA, "high")
+
+
+SINGLE_SYSTEM = """Du schreibst ein eBay.de-Angebot für einen gewerblichen Verkäufer (ein einzelner Artikel).
+
+Regeln:
+- Verwende ausschließlich die gelieferten Fakten (Steckbrief, Lieferumfang, Zustand, Notiz des Händlers).
+  Erfinde nichts dazu – keine Zustände, kein Zubehör, keine Spielinhalte, die nicht in den Daten stehen.
+  Was „unklar“ ist oder unter „UNSICHERE Punkte“ steht, wird nicht als Tatsache genannt (z. B. keine
+  Sprachangabe wie „deutsch“, wenn die Sprache unsicher ist).
+- Titel: höchstens 80 Zeichen, Deutsch. Spielname und Plattform nach vorne, dann wichtige Suchbegriffe
+  (z. B. PAL, deutsch, OVP/komplett mit Anleitung, Edition). Keine Großbuchstaben-Wörter nur zur Betonung,
+  keine Sonderzeichen-Spielereien, keine Zustandswörter wie „TOP“.
+- Beschreibung: schlichtes HTML (nur <h2>, <h3>, <p>, <ul>, <li>, <b>, <br>). Aufbau: kurze Einleitung,
+  „Lieferumfang“ als Liste, „Zustand“ als Liste (sachlich, auch Mängel klar benennen), optional kurz „Zum Spiel“
+  mit Eckdaten (Genre, Erscheinungsjahr) – nur, wenn sie im Steckbrief stehen.
+- KEINE Angaben zu Versand, Preisen, Steuern, Rücknahme oder Altersprüfung – diese Hinweise fügt das System selbst an.
+- Keine Umwelt- oder Nachhaltigkeitsaussagen und keine Garantieversprechen (EU-Richtlinie 2024/825, EmpCo).
+- Ton: sachlich, freundlich, Sie-Form.
+- Merkmale: fülle die gelisteten eBay-Merkmale, soweit die Fakten es hergeben. Bei Merkmalen mit Werteliste
+  nimm genau einen passenden Listenwert. Lass Merkmale weg, die du nicht sicher weißt. Nie „Herstellergarantie“."""
+
+SINGLE_SCHEMA = {
+    "type": "object",
+    "properties": {
+        "title": {"type": "string", "description": "Angebotstitel, höchstens 80 Zeichen"},
+        "description_html": {"type": "string"},
+        "specifics": {
+            "type": "array",
+            "items": {
+                "type": "object",
+                "properties": {"name": {"type": "string"}, "values": {"type": "array", "items": {"type": "string"}}},
+                "required": ["name", "values"],
+                "additionalProperties": False,
+            },
+        },
+    },
+    "required": ["title", "description_html", "specifics"],
+    "additionalProperties": False,
+}
+
+SKIP_ASPECTS = {"Herstellergarantie", "Ursprungsland", "Maßeinheit", "Anzahl der Einheiten"}
+
+
+def write_single_text(facts: dict, note: str, condition_name: str, aspects: dict[str, dict],
+                      doubts: list[str] | None = None) -> dict:
+    """→ {title, description, specifics: {Name: [Werte]}}"""
+    lines = [f"eBay-Zustand: {condition_name}", f"Notiz des Händlers: {note.strip() or '(keine)'}",
+             "Steckbrief (aus den Fotos erkannt):", json.dumps(facts, ensure_ascii=False, indent=1), "",
+             "UNSICHERE Punkte – weder in Titel, Beschreibung noch Merkmalen als Tatsache nennen:",
+             *([f"- {d}" for d in doubts] if doubts else ["- (keine)"]), "",
+             "eBay-Merkmale der Kategorie (Name – Pflicht? – mehrere Werte? – Werteliste):"]
+    for name, rule in aspects.items():
+        if name in SKIP_ASPECTS:
+            continue
+        vals = rule.get("values") or []
+        lines.append(f"- {name} – {'Pflicht' if rule['required'] else 'optional'} – {'mehrere' if rule['multi'] else 'einer'}"
+                     + (f" – {' | '.join(vals)}" if 0 < len(vals) <= 160 else " – freier Text"))
+    data = _ask(SINGLE_SYSTEM, [{"type": "text", "text": "\n".join(lines)}], SINGLE_SCHEMA, "low", 8000)
+    title = data["title"].strip()
+    if len(title) > 80:
+        title = title[:80].rsplit(" ", 1)[0]
+    specifics = {}
+    for s in data["specifics"]:
+        rule = aspects.get(s["name"])
+        vals = [v.strip() for v in s["values"] if v and v.strip()]
+        if not rule or not vals or s["name"] in SKIP_ASPECTS:
+            continue
+        specifics[s["name"]] = vals if rule["multi"] else vals[:1]
+    return {"title": title, "description": data["description_html"].strip(), "specifics": specifics}

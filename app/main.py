@@ -11,7 +11,7 @@ from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, Redirect
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 
-from . import advisor, ai, bundles, meta, review, config, db, ebay_account, ebay_auth, ebay_orders, ebay_trading, market, promotions, settings, sync, traffic, wawi
+from . import advisor, ai, bundles, handy, meta, review, config, db, ebay_account, ebay_auth, ebay_orders, ebay_trading, market, promotions, settings, sync, traffic, wawi
 
 log = logging.getLogger("ebay-manager")
 templates = Jinja2Templates(directory=config.BASE_DIR / "app" / "templates")
@@ -49,6 +49,7 @@ async def lifespan(app: FastAPI):
     ebay_orders.init()
     meta.init()
     review.init()
+    handy.init()
     task = asyncio.create_task(_auto_sync())
     yield
     task.cancel()
@@ -208,7 +209,7 @@ async def bundle_action(request: Request, bundle_id: int):
             return _back(url, info="Claude hat Titel und Beschreibung neu geschrieben.")
         if action == "pruefen":
             res = await asyncio.to_thread(bundles.verify, bundle_id)
-            fees = sum(a for _, a in res["fees"])
+            fees = ebay_trading.fee_total(res["fees"])
             text = f"eBay hat das Angebot geprüft: alles in Ordnung. Voraussichtliche Gebühren: {fees:.2f} €".replace(".", ",")
             if res["warnings"]:
                 text += " · Hinweise: " + " · ".join(res["warnings"])
@@ -516,3 +517,74 @@ async def suggestion_review(request: Request):
         log.exception("Paketprüfung fehlgeschlagen")
         return JSONResponse({"error": str(exc)}, status_code=500)
     return JSONResponse({"ok": True, "urteil": res["urteil"]})
+
+
+# ── Handy: Fotos → fertiges Angebot ─────────────────────────────────────
+
+@app.get("/handy", response_class=HTMLResponse)
+def handy_start(request: Request, info: str = "", fehler: str = ""):
+    return templates.TemplateResponse(request, "handy.html", {
+        "items": handy.recent(), "info": info, "fehler": fehler, "ai_ok": ai.enabled(),
+    })
+
+
+@app.post("/handy")
+async def handy_create(request: Request):
+    form = await request.form()
+    files = [await f.read() for f in form.getlist("fotos") if hasattr(f, "read")]
+    try:
+        hid = await asyncio.to_thread(handy.create, files, str(form.get("notiz") or ""))
+    except Exception as exc:
+        log.exception("Handy-Upload fehlgeschlagen")
+        return JSONResponse({"ok": False, "error": str(exc)}, status_code=400)
+    return JSONResponse({"ok": True, "url": f"/handy/{hid}"})
+
+
+@app.get("/handy/{hid}", response_class=HTMLResponse)
+def handy_item(request: Request, hid: int, info: str = "", fehler: str = ""):
+    h = handy.get(hid)
+    if not h:
+        raise HTTPException(404)
+    return templates.TemplateResponse(request, "handy_item.html", {
+        "h": h, "d": h["data"], "info": info, "fehler": fehler,
+        "storage": handy.storage_rows() if h["status"] == "bereit" else [],
+        "ebay_url": handy.item_url(h["item_id"]) if h["item_id"] else None,
+    })
+
+
+@app.get("/handy/{hid}/status")
+def handy_status(hid: int):
+    h = handy.get(hid)
+    if not h:
+        raise HTTPException(404)
+    return {"status": h["status"], "step": h["step"]}
+
+
+@app.get("/handy/{hid}/foto/{n}.jpg")
+def handy_photo(hid: int, n: int):
+    path = handy.photo_path(hid, n)
+    if not path.exists():
+        raise HTTPException(404)
+    return FileResponse(path, media_type="image/jpeg")
+
+
+@app.post("/handy/{hid}")
+async def handy_action(request: Request, hid: int):
+    form = dict(await request.form())
+    action = form.get("aktion")
+    url = f"/handy/{hid}"
+    try:
+        if action == "verwerfen":
+            handy.discard(hid)
+            return _back("/handy", info="Verworfen.")
+        if action == "neu":
+            handy.start(hid)
+            return RedirectResponse(url, status_code=303)
+        await asyncio.to_thread(handy.update, hid, form)
+        if action == "einstellen":
+            res = await asyncio.to_thread(handy.publish, hid, form.get("trotzdem") == "on")
+            return _back(url, info=f"Online! eBay-Artikel #{res['item_id']}", fehler=" · ".join(res["problems"]))
+        return _back(url, info="Aktualisiert.")
+    except Exception as exc:
+        log.exception("Handy-Aktion %s fehlgeschlagen", action)
+        return _back(url, fehler=str(exc))

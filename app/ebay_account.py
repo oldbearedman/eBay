@@ -19,7 +19,7 @@ _aspect_cache: dict[str, dict] = {}
 
 
 def category_aspects(category_id: str) -> dict[str, dict]:
-    """Merkmale einer Kategorie auf eBay.de: {Name: {"multi": bool, "required": bool}}"""
+    """Merkmale einer Kategorie auf eBay.de: {Name: {"multi", "required", "free_text", "usage", "values"}}"""
     if category_id not in _aspect_cache:
         r = httpx.get(
             f"{config.API_BASE}/commerce/taxonomy/v1/category_tree/77/get_item_aspects_for_category",
@@ -33,10 +33,44 @@ def category_aspects(category_id: str) -> dict[str, dict]:
                 "multi": a.get("aspectConstraint", {}).get("itemToAspectCardinality") == "MULTI",
                 "required": bool(a.get("aspectConstraint", {}).get("aspectRequired")),
                 "free_text": a.get("aspectConstraint", {}).get("aspectMode") == "FREE_TEXT",
+                "usage": a.get("aspectConstraint", {}).get("aspectUsage"),
+                "values": [v["localizedValue"] for v in a.get("aspectValues") or []],
             }
             for a in r.json().get("aspects", [])
         }
     return _aspect_cache[category_id]
+
+
+_condition_cache: dict[str, list[dict]] = {}
+
+
+def conditions(category_id: str) -> list[dict]:
+    """Erlaubte Zustände einer Kategorie auf eBay.de: [{"id": "4000", "name": "Sehr gut"}, …]"""
+    if category_id not in _condition_cache:
+        r = httpx.get(
+            f"{config.API_BASE}/sell/metadata/v1/marketplace/EBAY_DE/get_item_condition_policies",
+            params={"filter": f"categoryIds:{{{category_id}}}"},
+            headers={"Authorization": f"Bearer {ebay_auth.application_token()}"},
+            timeout=30,
+        )
+        r.raise_for_status()
+        pol = (r.json().get("itemConditionPolicies") or [{}])[0]
+        _condition_cache[category_id] = [{"id": c["conditionId"], "name": c.get("conditionDescription", "")}
+                                         for c in pol.get("itemConditions", [])]
+    return _condition_cache[category_id]
+
+
+def category_suggestions(query: str) -> list[tuple[str, str]]:
+    """Passende eBay.de-Kategorien zu einem Suchbegriff: [(ID, Name), …] – beste zuerst."""
+    r = httpx.get(
+        f"{config.API_BASE}/commerce/taxonomy/v1/category_tree/77/get_category_suggestions",
+        params={"q": query[:100]},
+        headers={"Authorization": f"Bearer {ebay_auth.application_token()}"},
+        timeout=30,
+    )
+    r.raise_for_status()
+    return [(c["category"]["categoryId"], c["category"]["categoryName"])
+            for c in r.json().get("categorySuggestions", [])]
 
 
 _policy_cache: dict[str, tuple[float, list]] = {}

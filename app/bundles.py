@@ -152,6 +152,38 @@ def _sku(details: list[dict]) -> str | None:
     return compact_sku([d["sku"] for d in details if d.get("sku")])
 
 
+def pick_profile(n: int, value: float, usk18: bool, current_id: str | None = None) -> dict | None:
+    """Versandprofil nach deiner Regel (wawi.porto_rule):
+    Ü18 → immer „Alter“ KP (Altersprüfung, für den Käufer kostenlos → Preis inkl. Versand);
+    1 Spiel / 2 Spiele bis Wertgrenze → Brief; bis N Artikel & Wert Y → Kleinpaket; darüber → Paket kostenlos."""
+    profs = ebay_account.shipping_profiles()
+    fast = [p for p in profs if (p.get("handling_days") or 0) <= 3]
+    cur = next((p for p in profs if p["id"] == current_id), None)
+    _, kind = wawi.porto_rule(n, value, usk18)
+    if usk18:
+        age = sorted((p for p in fast if p["age_check"]), key=lambda p: p["buyer_cost"])
+        if age:
+            cur = age[0]
+    elif "Paket" in kind and not kind.startswith("Kleinpaket"):
+        free = [p for p in fast if p["buyer_cost"] == 0 and "paket" in p["service"].lower() and not p["age_check"]]
+        if free:
+            cur = free[0]
+    elif kind.startswith(("1 Spiel", "2 Spiele")):
+        # Brief-Versand: bisheriges Profil behalten, falls es ein Brief ist, sonst ein Brief-Profil
+        if not (cur and "brief" in cur["service"].lower()):
+            brief = [p for p in fast if "brief" in p["service"].lower() and not p["age_check"]]
+            if brief:
+                cur = brief[0]
+    elif not cur or (cur.get("own_cost") or 0) < settings.get("porto_kp") or cur["age_check"]             or (cur.get("own_cost") or 0) >= settings.get("porto_paket"):
+        # Kleinpaket-Profil: Versandart kostet mind. Kleinpaket-Porto, aber weniger als ein Paket
+        kp = sorted((p for p in fast if not p["age_check"]
+                     and settings.get("porto_kp") <= (p.get("own_cost") or 0) < settings.get("porto_paket")),
+                    key=lambda p: p.get("own_cost") or 99)
+        if kp:
+            cur = kp[0]
+    return cur
+
+
 def create_draft(item_ids: list[str], price: float | None = None, hint: str | None = None) -> int:
     details = [ebay_trading.item_details(i) for i in item_ids]
     for d in details:
@@ -172,37 +204,11 @@ def create_draft(item_ids: list[str], price: float | None = None, hint: str | No
     usk18 = any(("18" in " ".join(d["specifics"].get("USK-Einstufung", [])))
                 or re.search(r"\b(USK|FSK)\s?18\b|ab 18", d["title"], re.I)
                 or d.get("shipping_profile") in age_profiles for d in details)
-    # Versandprofil nach deiner Regel:
-    #  Ü18 → immer „Alter“ KP (Altersprüfung, für den Käufer kostenlos → Preis inkl. Versand)
-    #  sonst: bis max. N Artikel & Warenwert Y → Kleinpaket, darüber → Paket kostenlos (Preis inkl. Versand)
+    # Versandprofil nach deiner Regel (siehe pick_profile)
     ship_id = first["shipping_profile"]
     value = price or suggest_price(total, 10)
     try:
-        profs = ebay_account.shipping_profiles()
-        fast = [p for p in profs if (p.get("handling_days") or 0) <= 3]
-        cur = next((p for p in profs if p["id"] == ship_id), None)
-        _, kind = wawi.porto_rule(len(details), value, bool(usk18))
-        if usk18:
-            age = sorted((p for p in fast if p["age_check"]), key=lambda p: p["buyer_cost"])
-            if age:
-                cur = age[0]
-        elif "Paket" in kind:
-            free = [p for p in fast if p["buyer_cost"] == 0 and "paket" in p["service"].lower() and not p["age_check"]]
-            if free:
-                cur = free[0]
-        elif kind.startswith(("1 Spiel", "2 Spiele")):
-            # Brief-Versand: Profil des ersten Artikels behalten, falls es ein Brief ist, sonst ein Brief-Profil
-            if not (cur and "brief" in cur["service"].lower()):
-                brief = [p for p in fast if "brief" in p["service"].lower() and not p["age_check"]]
-                if brief:
-                    cur = brief[0]
-        elif len(details) >= 2 and cur and (cur.get("own_cost") or 0) < settings.get("porto_kp"):
-            # Kleinpaket-Profil: Versandart kostet mind. Kleinpaket-Porto, aber weniger als ein Paket
-            kp = sorted((p for p in fast if not p["age_check"]
-                         and settings.get("porto_kp") <= (p.get("own_cost") or 0) < settings.get("porto_paket")),
-                        key=lambda p: p.get("own_cost") or 99)
-            if kp:
-                cur = kp[0]
+        cur = pick_profile(len(details), value, bool(usk18), ship_id)
         ship_id = cur["id"] if cur else ship_id
         buyer_cost = cur["buyer_cost"] if cur else 0.0
     except Exception:

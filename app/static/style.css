@@ -95,7 +95,8 @@ main { max-width: 1240px; margin: 0 auto; padding: 28px 16px 96px; }
 }
 .theme-toggle:hover { border-color: var(--accent); }
 @media (max-width: 720px) {
-  .top { padding: 10px 12px; }
+  .top { padding: 8px 12px; gap: 8px; position: static; justify-content: space-between; }
+  .top nav { order: 3; flex: 1 0 100%; flex-wrap: nowrap; overflow-x: auto; justify-content: space-between; }
   .top nav a { padding: 6px 9px; font-size: 13px; }
   .top nav a .nav-text { display: none; }
 }
@@ -373,3 +374,60 @@ h3.form-section { font-size: 15px; margin: 8px 0 10px; padding-top: 10px; border
 .done-section { margin-top: 28px; }
 .done-section > summary { font-size: 16px; margin-bottom: 14px; }
 .done-section .suggestion-wrap { opacity: .75; }
+
+/* ── Handy: Fotos → Angebot ─────────────────────────────────────── */
+.handy h1 { margin-top: 4px; }
+.handy .card { margin-bottom: 14px; }
+.handy .card h2 { margin-bottom: 10px; }
+.handy-form label { display: block; margin-bottom: 14px; font-weight: 700; font-size: 14px; }
+.handy-form label.inline { display: flex; gap: 8px; align-items: center; font-weight: 600; }
+.handy-form input[type=text], .handy-form select, .handy-form textarea { width: 100%; margin-top: 6px; font-size: 16px; }
+.handy-form textarea[name=body] { font: 13px/1.5 ui-monospace, Consolas, monospace; }
+.shots { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px; margin-bottom: 8px; }
+.shot, .shot-add {
+  aspect-ratio: 1; border-radius: var(--radius-sm); border: 1.5px dashed var(--border); background: var(--surface-2);
+  display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 4px;
+  font-weight: 700; font-size: 13px; color: var(--accent); cursor: pointer; position: relative; overflow: hidden; padding: 0;
+}
+.handy-form .shot-add { display: flex; margin: 0; text-align: center; }
+.shot-add span { font-size: 28px; }
+.shot-add.secondary { color: var(--muted); }
+.shot { border-style: solid; }
+.shot img { width: 100%; height: 100%; object-fit: cover; }
+.shot span { position: absolute; left: 6px; bottom: 6px; background: rgba(0,0,0,.55); color: #fff; font-size: 11px; padding: 1px 6px; border-radius: 6px; }
+.note-label { margin-top: 10px; }
+.btn.big { width: 100%; padding: 15px 18px; font-size: 17px; margin-top: 6px; }
+.handy-h2 { font-size: 17px; margin: 22px 0 10px; }
+.handy-list { display: flex; flex-direction: column; gap: 10px; }
+.handy-row { display: flex; gap: 12px; padding: 12px; color: var(--text); margin: 0 !important; }
+.handy-row:hover { text-decoration: none; }
+.handy-row img { width: 64px; height: 64px; object-fit: cover; border-radius: 10px; flex: none; }
+.handy-row .t { margin: 4px 0 2px; font-weight: 800; }
+.handy-row p { margin: 0; }
+.hs-analyse, .hs-einstellen { background: var(--accent-soft); color: var(--accent); }
+.hs-bereit { background: var(--warn-soft); color: var(--warn); }
+.hs-online { background: var(--ok-soft); color: var(--ok); }
+.hs-fehler { background: var(--error-soft); color: var(--error); }
+.photo-strip { display: flex; gap: 8px; overflow-x: auto; margin-bottom: 8px; padding-bottom: 4px; }
+.photo-strip img { height: 96px; width: 96px; object-fit: cover; border-radius: 10px; flex: none; }
+.center { text-align: center; }
+.spinner { width: 42px; height: 42px; margin: 8px auto 12px; border-radius: 50%; border: 4px solid var(--accent-soft); border-top-color: var(--accent); animation: spin 1s linear infinite; }
+@keyframes spin { to { transform: rotate(360deg); } }
+.big-ok { font-size: 26px; font-weight: 800; margin: 4px 0; }
+.t-big { font-size: 18px; font-weight: 800; margin: 0 0 2px; }
+.tight { margin: 6px 0; padding-left: 20px; }
+.warn-box { background: var(--warn-soft); border-radius: var(--radius-sm); padding: 10px 14px; margin-top: 10px; font-size: 14px; }
+.opt { display: flex !important; gap: 10px; align-items: center; padding: 12px; border: 1.5px solid var(--border); border-radius: var(--radius-sm); margin-bottom: 8px !important; cursor: pointer; }
+.opt.sel { border-color: var(--accent); background: var(--accent-soft); }
+.opt input[type=radio] { width: 20px; height: 20px; accent-color: var(--accent); flex: none; }
+.opt-main { display: flex; flex-direction: column; flex: 1; min-width: 0; font-weight: 600; }
+.opt-side { display: flex; flex-direction: column; align-items: flex-end; text-align: right; }
+.opt .price-in { margin-top: 6px; max-width: 160px; }
+.pill-rec { font-size: 11px; background: var(--accent); color: var(--accent-text); padding: 1px 7px; border-radius: 99px; margin-left: 4px; }
+.handy .margin-box { margin-top: 12px; }
+.actions-row { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 10px; }
+.sticky-actions { position: sticky; bottom: 0; background: var(--bg); padding: 8px 0 10px; border-top: 1px solid var(--border); }
+.sticky-actions .btn.big { margin-top: 0; }
+.sticky-actions .actions-row { margin-top: 8px; }
+.sticky-actions .actions-row .btn { flex: 1; }
+@media (max-width: 720px) { main:has(.handy) { padding-top: 14px; } }

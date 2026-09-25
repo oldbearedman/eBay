@@ -197,26 +197,20 @@ def sold_search_url(query: str, category_id: str | None = None) -> str:
     return url + (f"&_sacat={category_id}" if category_id else "")
 
 
-def check(item_id: str) -> dict:
-    details = ebay_trading.item_details(item_id)
-    try:
-        from . import meta
-        meta.save(meta.from_details(details))
-    except Exception:
-        pass
-    query, must, plat_tokens = build_query(details)
-    condition = "NEW" if details["condition_id"] in ("1000", "1500") else "USED"
+def search(query: str, must: list[str], plat_tokens: list[str], category_id: str | None,
+           ean: str | None = None, new: bool = False) -> list[dict]:
+    """Aktuelle Festpreis-Angebote anderer Verkäufer in DE (EAN exakt + Suchbegriff), günstigste zuerst."""
     filters = [
         "buyingOptions:{FIXED_PRICE}",
-        f"conditions:{{{condition}}}",
+        f"conditions:{{{'NEW' if new else 'USED'}}}",
         "itemLocationCountry:DE",
         f"excludeSellers:{{{own_username()}}}",
     ]
     seen: dict[str, dict] = {}
     searches = []
-    if details.get("ean") and details["ean"].isdigit():
-        searches.append(({"gtin": details["ean"]}, False))       # exakt – keine Wortprüfung nötig
-    searches.append(({"q": query, "category_ids": details["category_id"]}, True))
+    if ean and ean.isdigit():
+        searches.append(({"gtin": ean}, False))       # exakt – keine Wortprüfung nötig
+    searches.append(({"q": query, **({"category_ids": category_id} if category_id else {})}, True))
     for params, check_words in searches:
         r = httpx.get(
             f"{config.API_BASE}/buy/browse/v1/item_summary/search",
@@ -241,15 +235,35 @@ def check(item_id: str) -> dict:
                 "url": s.get("itemWebUrl"), "condition": s.get("condition"),
                 "image": (s.get("image") or {}).get("imageUrl"),
             }
+    return sorted(seen.values(), key=lambda o: o["total"])
+
+
+def price_levels(totals: list[float]) -> tuple[float | None, float | None]:
+    """Marktpreis (Median) und Schnellverkauf (unteres Drittel) aus Gesamtpreisen inkl. Versand."""
+    if not totals:
+        return None, None
+    totals = sorted(totals)
+    quick = totals[int(len(totals) * 0.3)] if len(totals) >= 5 else totals[0]
+    return statistics.median(totals), quick
+
+
+def check(item_id: str) -> dict:
+    details = ebay_trading.item_details(item_id)
+    try:
+        from . import meta
+        meta.save(meta.from_details(details))
+    except Exception:
+        pass
+    query, must, plat_tokens = build_query(details)
+    all_offers = search(query, must, plat_tokens, details["category_id"], details.get("ean"),
+                        new=details["condition_id"] in ("1000", "1500"))
     # Nur vergleichbare Angebote (Vollständigkeit + Zustand); Käufer vergleichen den Gesamtpreis inkl. Versand
     own_complete = completeness(details["title"])
     own_rank = COND_RANK_ID.get(details.get("condition_id") or "")
-    all_offers = sorted(seen.values(), key=lambda o: o["total"])
     offers = [o for o in all_offers if _comparable(o, own_complete, own_rank)]
     totals = [o["total"] for o in offers]
     # Marktpreis = Median der vergleichbaren Angebote; Schnellverkauf = unteres Drittel
-    ref = statistics.median(totals) if totals else None
-    quick = totals[int(len(totals) * 0.3)] if len(totals) >= 5 else (totals[0] if totals else None)
+    ref, quick = price_levels(totals)
     own_ship = details.get("shipping_cost") or 0.0
     result = {
         "item_id": item_id,
@@ -277,21 +291,23 @@ def check(item_id: str) -> dict:
     return describe(result, details["category_id"])
 
 
-def own_sales(item_id: str, title: str) -> list[dict]:
-    """Eigene Verkäufe desselben Artikels – echte Verkaufspreise aus WaWi und Bestellarchiv."""
+def own_sales(item_id: str | None, title: str, ref_name: str | None = None) -> list[dict]:
+    """Eigene Verkäufe desselben Artikels – echte Verkaufspreise aus WaWi und Bestellarchiv.
+    ref_name: WaWi-Artikelname, falls schon bekannt (sonst über die Zuordnung des Angebots)."""
     from . import ebay_orders, wawi
     out = []
     try:
         if wawi.available():
-            link = wawi.links().get(item_id)
-            prods = wawi.products()
-            ref_name = prods[link]["artikel"] if link in prods else title
+            if not ref_name:
+                link = wawi.links().get(item_id) if item_id else None
+                prods = wawi.products()
+                ref_name = prods[link]["artikel"] if link in prods else title
             for r in wawi.sold_rows():
                 if r["vk"] > 0 and wawi._score(ref_name, r["artikel"]) >= 0.8:
                     out.append({"date": r["verkauft_am"], "price": r["vk"], "source": "WaWi", "title": r["artikel"]})
         for o in ebay_orders.all_orders():
             for li in o["items"]:
-                if li["item_id"] == item_id or wawi._score(title, li["title"]) >= 0.85:
+                if (item_id and li["item_id"] == item_id) or wawi._score(title, li["title"]) >= 0.85:
                     out.append({"date": o["date"], "price": li["price"] + li["shipping"], "source": "eBay", "title": li["title"]})
     except Exception:
         pass

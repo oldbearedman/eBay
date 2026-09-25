@@ -1,0 +1,106 @@
+{% extends "base.html" %}
+{% block title %}Handy · eBay Manager{% endblock %}
+{% set labels = {"analyse": "wird analysiert", "bereit": "Vorschau bereit", "einstellen": "wird eingestellt",
+                 "online": "Online", "fehler": "Fehler"} %}
+{% block content %}
+<div class="narrow handy">
+{% if info %}<p class="banner ok">{{ info }}</p>{% endif %}
+{% if fehler %}<p class="banner error">{{ fehler }}</p>{% endif %}
+{% if not ai_ok %}<p class="banner error">Kein Claude-API-Schlüssel eingerichtet – die Erkennung funktioniert so nicht.</p>{% endif %}
+
+<h1>📱 Neuer Artikel</h1>
+<form id="neu" class="card handy-form">
+  <div class="shots" id="shots">
+    <label class="shot-add">
+      <input type="file" accept="image/*" capture="environment" id="cam" hidden>
+      <span>📷</span>Foto aufnehmen
+    </label>
+    <label class="shot-add secondary">
+      <input type="file" accept="image/*" multiple id="gal" hidden>
+      <span>🖼️</span>Aus Galerie
+    </label>
+  </div>
+  <p class="muted small">Tipp: Vorderseite zuerst (wird das Hauptbild), dann Rückseite mit Barcode, Disc/Modul, Anleitung, Mängel. Antippen entfernt ein Foto.</p>
+
+  <label class="note-label" for="notiz">Zustand kurz beschreiben <span class="muted small">(Mikrofon der Tastatur zum Sprechen)</span></label>
+  <textarea id="notiz" name="notiz" rows="3" placeholder="z. B. komplett mit Anleitung, Disc leichte Kratzer, Hülle top"></textarea>
+
+  <button class="btn big" id="go" type="submit" disabled>✨ Angebot erstellen lassen</button>
+  <p class="muted small" id="progress" hidden></p>
+</form>
+
+{% if items %}
+<h2 class="handy-h2">Zuletzt</h2>
+<div class="handy-list">
+  {% for h in items %}
+  <a class="card handy-row" href="/handy/{{ h.id }}">
+    <img src="/handy/{{ h.id }}/foto/1.jpg" alt="" loading="lazy">
+    <div>
+      <span class="status hs-{{ h.status }}">{{ labels.get(h.status, h.status) }}</span>
+      <p class="t">{{ h.data.title or (h.data.ident.name if h.data.ident else "") or h.note or "Artikel #" ~ h.id }}</p>
+      <p class="muted small">
+        {% if h.data.total %}{{ "%.2f"|format(h.data.total)|replace(".", ",") }} € inkl. Versand · {% endif %}{{ h.created_at[:16]|replace("T", " ") }}
+      </p>
+    </div>
+  </a>
+  {% endfor %}
+</div>
+{% endif %}
+</div>
+
+<script>
+(() => {
+  const shots = document.getElementById('shots');
+  const go = document.getElementById('go');
+  const progress = document.getElementById('progress');
+  const photos = [];   // Blobs (verkleinert)
+
+  // Fotos im Browser verkleinern – spart Zeit beim Hochladen übers WLAN
+  async function shrink(file) {
+    try {
+      const bmp = await createImageBitmap(file, { imageOrientation: 'from-image' });
+      const scale = Math.min(1, 2000 / Math.max(bmp.width, bmp.height));
+      const c = document.createElement('canvas');
+      c.width = Math.round(bmp.width * scale); c.height = Math.round(bmp.height * scale);
+      c.getContext('2d').drawImage(bmp, 0, 0, c.width, c.height);
+      return await new Promise(res => c.toBlob(res, 'image/jpeg', 0.88));
+    } catch (e) { return file; }
+  }
+
+  function render() {
+    shots.querySelectorAll('.shot').forEach(e => e.remove());
+    photos.forEach((blob, i) => {
+      const d = document.createElement('button');
+      d.type = 'button'; d.className = 'shot'; d.title = 'Entfernen';
+      d.innerHTML = `<img src="${URL.createObjectURL(blob)}" alt=""><span>${i === 0 ? 'Hauptbild' : i + 1}</span>`;
+      d.onclick = () => { photos.splice(i, 1); render(); };
+      shots.insertBefore(d, shots.querySelector('.shot-add'));
+    });
+    go.disabled = photos.length === 0;
+  }
+
+  async function add(input) {
+    for (const f of input.files) { if (photos.length < 12) photos.push(await shrink(f)); }
+    input.value = ''; render();
+  }
+  document.getElementById('cam').onchange = e => add(e.target);
+  document.getElementById('gal').onchange = e => add(e.target);
+
+  document.getElementById('neu').onsubmit = async ev => {
+    ev.preventDefault();
+    go.disabled = true; progress.hidden = false; progress.textContent = 'Fotos werden hochgeladen …';
+    const fd = new FormData();
+    photos.forEach((b, i) => fd.append('fotos', b, `foto${i + 1}.jpg`));
+    fd.append('notiz', document.getElementById('notiz').value);
+    try {
+      const r = await fetch('/handy', { method: 'POST', body: fd });
+      const j = await r.json();
+      if (!j.ok) throw new Error(j.error || 'Fehler');
+      location.href = j.url;
+    } catch (e) {
+      progress.textContent = '❌ ' + e.message; go.disabled = false;
+    }
+  };
+})();
+</script>
+{% endblock %}

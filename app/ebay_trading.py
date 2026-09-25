@@ -176,12 +176,14 @@ def build_item_xml(d: dict) -> str:
     if specs:
         parts.append(f"<ItemSpecifics>{specs}</ItemSpecifics>")
     parts += [
-        "<ProductListingDetails><EAN>Nicht zutreffend</EAN></ProductListingDetails>",
+        f"<ProductListingDetails><EAN>{escape(d.get('ean') or 'Nicht zutreffend')}</EAN></ProductListingDetails>",
         "<SellerProfiles>",
         f"<SellerShippingProfile><ShippingProfileID>{escape(d['shipping_profile'])}</ShippingProfileID></SellerShippingProfile>",
         f"<SellerReturnProfile><ReturnProfileID>{escape(d['return_profile'])}</ReturnProfileID></SellerReturnProfile>",
         f"<SellerPaymentProfile><PaymentProfileID>{escape(d['payment_profile'])}</PaymentProfileID></SellerPaymentProfile>",
         "</SellerProfiles>",
+        # Regelbesteuerte Ware: eBay zeigt „inkl. 19 % MwSt.“ am Preis (bei § 25a nie – dort steht der Hinweis im Text)
+        f"<VATDetails><VATPercent>{d['vat_percent']:g}</VATPercent></VATDetails>" if d.get("vat_percent") else "",
         "<Site>Germany</Site>",
         "</Item>",
     ]
@@ -197,11 +199,19 @@ def _fees(root: ET.Element) -> list[tuple[str, float]]:
     return out
 
 
+def fee_total(fees: list[tuple[str, float]]) -> float:
+    """eBay liefert „ListingFee“ bereits als Summe der Einzelgebühren."""
+    total = next((a for n, a in fees if n == "ListingFee"), None)
+    return round(total if total is not None else sum(a for _, a in fees), 2)
+
+
 def _warnings(root: ET.Element) -> list[str]:
     return [
         (e.findtext("e:LongMessage", namespaces=NS) or "").strip()
         for e in root.findall("e:Errors", NS)
         if e.findtext("e:SeverityCode", namespaces=NS) == "Warning"
+        # allgemeiner Hinweis zu einbehaltenen Zahlungen – steht bei jedem Angebot, kein Handlungsbedarf
+        and "einbehalten" not in (e.findtext("e:LongMessage", namespaces=NS) or "")
     ]
 
 

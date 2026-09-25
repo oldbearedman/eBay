@@ -506,3 +506,38 @@ def set_block(produktnrs: list[str], block: str) -> list[str]:
         raise RuntimeError(f"WaWi hat das Speichern abgelehnt: {r.json()}")
     check = _row_ids(produktnrs)
     return [p for p in produktnrs if (check[p][1].get("verkaufsblock") or "").strip() == block]
+
+
+# ── Status „Inseriert“ setzen – über die WaWi-Schnittstelle ─────────────
+
+def storage_usage() -> dict[str, int]:
+    """Belegung der Lager-Reihen (inserierte Videospiele je Reihe, wie die WaWi zählt – max. 10)."""
+    usage: dict[str, int] = {}
+    for r in _rows():
+        if r.get("status") == "Inseriert" and r.get("kategorie") == "Videospiele" and (r.get("lager_reihe") or "").strip():
+            usage[r["lager_reihe"].strip()] = usage.get(r["lager_reihe"].strip(), 0) + 1
+    return usage
+
+
+def set_listed(produktnr: str, lager_reihe: str | None = None) -> None:
+    """Setzt einen WaWi-Artikel von „Im Lager“ auf „Inseriert“ (optional mit Lager-Reihe) und prüft das Ergebnis."""
+    import httpx
+    rows = _row_ids([produktnr])
+    if produktnr not in rows:
+        raise ValueError(f"{produktnr} ist in der WaWi nicht zu finden.")
+    row_id, r = rows[produktnr]
+    if r.get("status") != "Im Lager":
+        raise ValueError(f"{produktnr} hat in der WaWi den Status „{r.get('status')}“ – nichts geändert.")
+    change = {"id": row_id, "status": "Inseriert"}
+    if lager_reihe:
+        change["lager_reihe"] = lager_reihe
+    resp = httpx.post(f"{WAWI_URL}/api/rows", json={"rows": [change]}, timeout=60)
+    data = resp.json() if resp.headers.get("content-type", "").startswith("application/json") else {}
+    if data.get("error") == "storage_capacity":
+        raise ValueError(f"Lager-Reihe voll ({', '.join(data.get('details', []))}) – bitte eine andere Reihe wählen.")
+    resp.raise_for_status()
+    if not data.get("ok"):
+        raise RuntimeError(f"WaWi hat das Speichern abgelehnt: {data}")
+    after = _row_ids([produktnr])[produktnr][1]
+    if after.get("status") != "Inseriert":
+        raise RuntimeError(f"WaWi-Status von {produktnr} ist danach „{after.get('status')}“.")

@@ -1,0 +1,194 @@
+{% extends "base.html" %}
+{% block title %}Handy · eBay Manager{% endblock %}
+{% macro eur(v) %}{% if v is none %}–{% else %}{{ "%.2f"|format(v)|replace(".", ",") }} €{% endif %}{% endmacro %}
+{% block content %}
+<div class="narrow handy">
+<p><a href="/handy">← Neuer Artikel</a></p>
+{% if info %}<p class="banner ok">{{ info }}</p>{% endif %}
+{% if fehler %}<p class="banner error">{{ fehler }}</p>{% endif %}
+
+<div class="photo-strip">
+  {% for n in range(1, h.photos + 1) %}<a href="/handy/{{ h.id }}/foto/{{ n }}.jpg" target="_blank"><img src="/handy/{{ h.id }}/foto/{{ n }}.jpg" alt=""></a>{% endfor %}
+</div>
+{% if h.note %}<p class="muted small">Deine Notiz: „{{ h.note }}“</p>{% endif %}
+
+{% if h.status in ("analyse", "einstellen") %}
+  <div class="card center">
+    <div class="spinner"></div>
+    <p id="step"><b>{{ h.step or "Bitte warten …" }}</b></p>
+    <p class="muted small">Dauert meist 30–90 Sekunden. Du kannst die Seite offen lassen – sie aktualisiert sich selbst.</p>
+  </div>
+  <script>
+    (async function poll() {
+      try {
+        const r = await fetch('/handy/{{ h.id }}/status'); const j = await r.json();
+        if (j.status !== '{{ h.status }}') return location.reload();
+        if (j.step) document.getElementById('step').innerHTML = '<b>' + j.step + '</b>';
+      } catch (e) {}
+      setTimeout(poll, 2500);
+    })();
+  </script>
+
+{% elif h.status == "fehler" %}
+  <div class="card">
+    <p class="error"><b>Das hat nicht geklappt:</b> {{ h.error }}</p>
+    <form method="post" class="actions-row">
+      <button class="btn" name="aktion" value="neu">🔄 Nochmal analysieren</button>
+      <button class="btn danger" name="aktion" value="verwerfen">Verwerfen</button>
+    </form>
+  </div>
+
+{% elif h.status == "online" %}
+  <div class="card center">
+    <p class="big-ok">✅ Online</p>
+    <p><b>{{ d.title }}</b></p>
+    <p>{{ eur(d.total) }} inkl. Versand · {{ d.shipping.profile_name }}</p>
+    {% if d.profit %}<p class="muted">Gewinn: <b>{{ eur(d.profit.profit) }}</b></p>{% endif %}
+    {% for p in d.problems or [] %}<p class="error small">{{ p }}</p>{% endfor %}
+    {% if d.wawi and not d.problems %}<p class="ok small">WaWi: {{ d.wawi_pnr }} steht jetzt auf „Inseriert“{% if d.lager_reihe %} ({{ d.lager_reihe }}){% endif %}.</p>{% endif %}
+    <p><a class="btn" href="{{ ebay_url }}" target="_blank">Bei eBay ansehen</a></p>
+    <p><a class="btn secondary" href="/handy">📷 Nächster Artikel</a></p>
+  </div>
+
+{% else %}
+{% set id = d.ident %}
+<form method="post" class="handy-form" id="f">
+  <input type="hidden" name="aktion" value="aktualisieren" id="aktion">
+
+  <div class="card">
+    <h2>🔎 Erkannt</h2>
+    <p class="t-big">{{ id.name }}{% if id.edition %} · {{ id.edition }}{% endif %}</p>
+    <p class="muted">{{ id.plattform or "Plattform ?" }} · {{ id.region }}{% if id.usk %} · USK {{ id.usk }}{% endif %}{% if id.ean %} · EAN {{ id.ean }}{% endif %}</p>
+    <p class="small">Lieferumfang: Hülle {{ id.umfang.huelle }} · Anleitung {{ id.umfang.anleitung }} · Datenträger {{ id.umfang.datentraeger }}{% if id.umfang.sonstiges %} · {{ id.umfang.sonstiges }}{% endif %}</p>
+    {% if id.zustand_details %}<ul class="small tight">{% for z in id.zustand_details %}<li>{{ z }}</li>{% endfor %}</ul>{% endif %}
+    {% if id.unsicherheiten %}
+      <div class="warn-box"><b>Bitte prüfen:</b><ul class="tight">{% for u in id.unsicherheiten %}<li>{{ u }}</li>{% endfor %}</ul></div>
+    {% endif %}
+  </div>
+
+  <div class="card">
+    <h2>💶 Preis</h2>
+    <p class="muted small">
+      {% if d.market.found %}{{ d.market.found }} vergleichbare Angebote{% if d.market.rough %} (grobe Suche){% endif %}:
+        günstiges Drittel {{ eur(d.market.quick) }}, Mitte {{ eur(d.market.median) }} (jeweils inkl. Versand).
+      {% else %}Keine vergleichbaren Angebote gefunden.{% endif %}
+      {% if d.market.own_sales %}Du hast ihn {{ d.market.own_sales|length }}× verkauft, Ø {{ eur(d.market.sold_avg) }}.{% endif %}
+      <a href="{{ d.market.sold_url }}" target="_blank">Verkaufte bei eBay ansehen</a>
+    </p>
+    {% for o in d.options %}
+    <label class="opt {% if d.price_choice == o.key %}sel{% endif %}">
+      <input type="radio" name="price_choice" value="{{ o.key }}" {% if d.price_choice == o.key %}checked{% endif %} data-auto>
+      <span class="opt-main">
+        <b>{{ o.label }}{% if o.key == d.recommended %} <span class="pill-rec">Empfehlung</span>{% endif %}</b>
+        <span class="small muted">{{ eur(o.article) }} + {{ eur(o.ship.buyer) }} Versand · {{ o.ship.kind }}</span>
+        {% if o.raised %}<span class="small warn">auf deinen Mindestpreis angehoben (Markt: {{ eur(o.ref_total) }})</span>{% endif %}
+      </span>
+      <span class="opt-side">
+        <b>{{ eur(o.total) }}</b>
+        {% if o.profit %}<span class="small {{ 'ok' if o.profit.profit >= 1 else ('warn' if o.profit.profit >= 0 else 'error') }}">Gewinn {{ eur(o.profit.profit) }}</span>{% endif %}
+      </span>
+    </label>
+    {% endfor %}
+    <label class="opt {% if d.price_choice == 'eigen' %}sel{% endif %}">
+      <input type="radio" name="price_choice" value="eigen" {% if d.price_choice == 'eigen' %}checked{% endif %}>
+      <span class="opt-main"><b>Eigener Artikelpreis</b>
+        <input type="text" inputmode="decimal" name="custom_price" class="price-in" placeholder="z. B. 12,99"
+               value="{{ ('%.2f'|format(d.custom_price))|replace('.', ',') if d.custom_price else '' }}"></span>
+    </label>
+
+    <div class="margin-box">
+      <div class="mrow total"><span>Käufer zahlt</span><span>{{ eur(d.total) }}</span></div>
+      <div class="mrow small"><span>Artikel {{ eur(d.price) }} + Versand {{ eur(d.shipping.buyer) }}</span><span>{{ d.shipping.profile_name }}</span></div>
+      {% if d.profit %}
+        <div class="mrow small"><span>EK</span><span>{{ eur(d.wawi.ek) }}</span></div>
+        <div class="mrow small"><span>Dein Porto ({{ d.shipping.kind }})</span><span>{{ eur(d.shipping.own) }}</span></div>
+        <div class="mrow small"><span>eBay-Gebühren (geschätzt)</span><span>{{ eur(d.profit.fee) }}</span></div>
+        <div class="mrow small"><span>Umsatzsteuer</span><span>{{ eur(d.profit.tax) }}</span></div>
+        <div class="mrow total"><span>Gewinn</span><span class="{{ 'ok' if d.profit.profit >= 1 else ('warn' if d.profit.profit >= 0 else 'error') }}">{{ eur(d.profit.profit) }}</span></div>
+        <p class="small muted">Mindestpreis (≥ 1 € Gewinn): {{ eur(d.min_article) }}</p>
+      {% else %}
+        <p class="small warn">Nicht in der WaWi zugeordnet – Gewinn kann nicht berechnet werden.</p>
+      {% endif %}
+    </div>
+  </div>
+
+  <div class="card">
+    <h2>📦 WaWi & Steuer</h2>
+    <label>WaWi-Artikel
+      {% if d.wawi_sure and d.wawi_sure != "keine" %}<span class="small muted">(Claude: Sicherheit {{ d.wawi_sure }})</span>{% endif %}
+      <select name="wawi_pnr" data-auto>
+        <option value="">– nicht in der WaWi –</option>
+        {% for c in d.wawi_candidates %}
+          <option value="{{ c.produktnr }}" {% if c.produktnr == d.wawi_pnr %}selected{% endif %}>{{ c.artikel }} · {{ c.zustand }} · EK {{ eur(c.ek) }} ({{ c.produktnr }})</option>
+        {% endfor %}
+      </select>
+    </label>
+    {% if d.wawi %}
+    <label>Lager-Reihe <span class="small muted">(optional, max. 10 inserierte Spiele je Reihe)</span>
+      <select name="lager_reihe">
+        <option value="">{{ ("– bleibt „" ~ d.wawi.lager_reihe ~ "“ –") if d.wawi.lager_reihe else "– keine –" }}</option>
+        {% for r in storage %}
+          <option value="{{ r.name }}" {% if r.name == d.lager_reihe %}selected{% endif %} {% if r.used >= 10 %}disabled{% endif %}>{{ r.name }} ({{ r.used }}/10)</option>
+        {% endfor %}
+      </select>
+    </label>
+    {% endif %}
+    <label>Steuer
+      <select name="tax" data-auto>
+        <option value="">{% if d.wawi and d.wawi.tax_label %}aus der WaWi: {{ d.wawi.tax_label }}{% else %}– bitte wählen –{% endif %}</option>
+        <option value="25a" {% if d.tax_override == "25a" %}selected{% endif %}>Differenzbesteuerung § 25a (Hinweis in der Beschreibung)</option>
+        <option value="regel" {% if d.tax_override == "regel" %}selected{% endif %}>Regelbesteuerung (eBay zeigt „inkl. 19 % MwSt.“)</option>
+      </select>
+    </label>
+    {% if not d.tax_mode %}<p class="small error">Steuerart ist nicht festgelegt – bitte wählen.</p>{% endif %}
+  </div>
+
+  <div class="card">
+    <h2>📝 Angebot</h2>
+    <label>Titel <span class="small muted" id="tc"></span>
+      <input type="text" name="title" id="title" maxlength="80" value="{{ d.title }}">
+    </label>
+    <label>Zustand
+      <select name="condition_id" data-auto>
+        {% for c in d.conditions %}<option value="{{ c.id }}" {% if c.id == d.condition_id %}selected{% endif %}>{{ c.name }}</option>{% endfor %}
+      </select>
+    </label>
+    <p class="small muted">Kategorie: {{ d.category_name }} · Merkmale:
+      {% for k, v in d.specifics.items() %}{{ k }}: {{ v|join(", ") }}{% if not loop.last %} · {% endif %}{% endfor %}</p>
+    <details>
+      <summary>Beschreibung ansehen</summary>
+      <div class="desc-preview">{{ d.description|safe }}</div>
+      <label class="small">Text bearbeiten (HTML, ohne die Hinweise am Ende)
+        <textarea name="body" rows="10">{{ d.body }}</textarea>
+      </label>
+    </details>
+    {% if d.verify.ok %}
+      <p class="small ok">✔ eBay hat das Angebot geprüft{% if d.verify.fee_sum %} – Einstellgebühren {{ eur(d.verify.fee_sum) }}{% endif %}.</p>
+      {% for w in d.verify.warnings %}<p class="small muted">Hinweis von eBay: {{ w }}</p>{% endfor %}
+    {% else %}
+      <p class="small error">eBay-Prüfung: {{ d.verify.error }}</p>
+    {% endif %}
+  </div>
+
+  <div class="sticky-actions">
+    {% if d.below_min %}<label class="small inline"><input type="checkbox" name="trotzdem"> Trotzdem unter Mindestpreis einstellen</label>{% endif %}
+    <button class="btn big" type="submit" onclick="document.getElementById('aktion').value='einstellen'"
+            {% if not d.tax_mode %}disabled{% endif %}>🚀 Für {{ eur(d.total) }} einstellen</button>
+    <div class="actions-row">
+      <button class="btn secondary small-btn" type="submit">Aktualisieren</button>
+      <button class="btn secondary small-btn" type="submit" formnovalidate onclick="document.getElementById('aktion').value='neu'">Neu analysieren</button>
+      <button class="btn danger small-btn" type="submit" onclick="document.getElementById('aktion').value='verwerfen'">Verwerfen</button>
+    </div>
+  </div>
+</form>
+<script>
+  (() => {
+    const f = document.getElementById('f'), t = document.getElementById('title'), tc = document.getElementById('tc');
+    const count = () => tc.textContent = `${t.value.length}/80`; t.oninput = count; count();
+    f.querySelectorAll('[data-auto]').forEach(el => el.addEventListener('change', () => f.requestSubmit()));
+    f.addEventListener('submit', () => f.querySelectorAll('button').forEach(b => setTimeout(() => b.disabled = true)));
+  })();
+</script>
+{% endif %}
+</div>
+{% endblock %}
