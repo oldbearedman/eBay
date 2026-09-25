@@ -140,6 +140,8 @@ Aufgabe:
    Altersfreigabe: NUR das deutsche USK-Logo zählt. Trägt das Cover stattdessen nur PEGI oder ESRB (Import,
    österreichische/UK-/US-Fassung), ist usk = "keine" – rechtlich gilt der Artikel dann als nicht gekennzeichnet
    und darf nur mit Altersprüfung verschickt werden. usk = "" nur, wenn das Cover nicht zu sehen ist.
+   fremdfassung = true, sobald es KEINE deutsche Fassung ist: Cover mit PEGI- oder ESRB-Logo statt USK, NTSC,
+   UK-/US-/Import-Cover – auch wenn auf der Disc zusätzlich ein USK-Logo steht (dann usk = diese Zahl).
    EAN nur, wenn der Barcode mit Ziffern klar lesbar ist – sonst "".
 2. Lagerliste: Welcher Eintrag ist genau dieser Artikel (gleiches Spiel, gleiche Plattform, passende Edition)?
    Gib dessen Produktnummer zurück, sonst "". Bei mehreren gleichen Einträgen nimm den ersten.
@@ -160,6 +162,8 @@ IDENTIFY_SCHEMA = {
         "ean": {"type": "string"},
         "usk": {"type": "string", "enum": ["", "0", "6", "12", "16", "18", "keine"],
                 "description": "Zahl vom USK-Logo; \"keine\" = Artikel trägt sichtbar KEIN USK-Logo (nur PEGI/ESRB, Import); \"\" = nicht erkennbar"},
+        "fremdfassung": {"type": "boolean",
+                         "description": "true = PEGI/ESRB-Cover, NTSC oder Import-Fassung (auch wenn auf der Disc USK steht)"},
         "genre": {"type": "string"},
         "herausgeber": {"type": "string"},
         "erscheinungsjahr": {"type": "string"},
@@ -169,7 +173,7 @@ IDENTIFY_SCHEMA = {
         "suchbegriff": {"type": "string"},
     },
     "required": ["erkannt", "artikel_typ", "name", "plattform", "edition", "region", "sprache", "ean", "usk",
-                 "genre", "herausgeber", "erscheinungsjahr", "wawi_produktnr", "wawi_sicherheit", "unsicherheiten",
+                 "fremdfassung", "genre", "herausgeber", "erscheinungsjahr", "wawi_produktnr", "wawi_sicherheit", "unsicherheiten",
                  "suchbegriff"],
     "additionalProperties": False,
 }

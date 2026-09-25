@@ -42,6 +42,7 @@ CONDITION_NAMES = {"neu": "neu", "neuwertig": "neuwertig", "sehr_gut": "sehr gut
 
 TAX_NOTE_25A = "Differenzbesteuert nach § 25a UStG – die Umsatzsteuer wird nicht gesondert ausgewiesen."
 AGE_NOTE = "USK ab 18: Versand mit Altersprüfung – Übergabe nur an Personen ab 18 Jahren."
+AGE_SHIP_NOTE = "Versand mit Altersprüfung – Übergabe nur an Personen ab 18 Jahren."
 NO_USK_NOTE = ("Dieser Artikel trägt keine deutsche USK-Kennzeichnung. Versand daher nur mit Altersprüfung – "
                "Übergabe nur an Personen ab 18 Jahren.")
 
@@ -182,6 +183,8 @@ def confirm(hid: int, form: dict) -> None:
         i["usk"] = form["usk"]
     if form.get("region") in ("PAL", "NTSC-U/C (US/Canada)", "NTSC-J (Japan)", "unbekannt"):
         i["region"] = form["region"]
+    if "name" in form:   # Bestätigen-Formular (Häkchen fehlt im Formular, wenn nicht gesetzt)
+        i["fremdfassung"] = form.get("fremdfassung") == "on"
     if form.get("artikel_typ") in ("videospiel", "konsole", "zubehoer", "film_musik", "buch", "sonstiges"):
         i["artikel_typ"] = form["artikel_typ"]
     if (i["name"], i["plattform"]) != old:
@@ -456,8 +459,10 @@ def recalc(data: dict) -> None:
     tax = data["tax_mode"]
     ident = data["ident"]
     # Ü18-Versand: USK 18 – und auch Ware OHNE USK-Kennzeichen (Import, nur PEGI/ESRB), § 12 Abs. 3 JuSchG
+    # Hausregel: PEGI-/Import-/NTSC-Fassungen und Spiele ohne USK gehen IMMER über „Alter“ KP –
+    # auch wenn auf der Disc ein USK-Logo steht
     no_usk = ident["artikel_typ"] == "videospiel" and (
-        ident["usk"] in ("", "keine") or ident["region"].startswith("NTSC"))   # Import/PEGI/unbekannt → wie „keine USK“
+        ident.get("fremdfassung") or ident["usk"] in ("", "keine") or ident["region"].startswith("NTSC"))
     data["no_usk"] = no_usk
     usk18 = ident["usk"] == "18" or no_usk or bool(wawi.USK18_RE.search(f"{data.get('title', '')} {(w or {}).get('artikel', '')}"))
     data["usk18"] = usk18
@@ -507,7 +512,7 @@ def recalc(data: dict) -> None:
     if tax == "25a":
         hints.append(TAX_NOTE_25A)
     if usk18:
-        hints.append(NO_USK_NOTE if no_usk and ident["usk"] != "18" else AGE_NOTE)
+        hints.append(AGE_NOTE if ident["usk"] == "18" else NO_USK_NOTE if ident["usk"] in ("", "keine") else AGE_SHIP_NOTE)
     data["hints"] = hints
     data["description"] = data["body"] + ("<h3>Hinweise</h3><ul>" + "".join(f"<li>{h}</li>" for h in hints) + "</ul>" if hints else "")
 

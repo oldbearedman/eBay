@@ -41,6 +41,7 @@
       <span>{{ id.plattform or "Plattform ?" }}</span>
       {% if id.usk == "keine" %}<span class="usk18">ohne USK → nur ab 18</span>{% elif id.usk %}<span class="{{ 'usk18' if id.usk == '18' else '' }}">USK {{ id.usk }}</span>{% else %}<span class="usk18">USK ? – bitte wählen</span>{% endif %}
       <span>{{ id.region }}</span>
+      {% if id.fremdfassung or id.region.startswith("NTSC") %}<span class="usk18">PEGI/Import → „Alter“ KP</span>{% endif %}
       {% if id.sprache %}<span>{{ id.sprache }}</span>{% endif %}
       {% if id.ean %}<span>EAN {{ id.ean }}</span>{% endif %}
     </div>
@@ -62,6 +63,8 @@
         <label>Region
           <select name="region">{% for r in ["PAL", "NTSC-U/C (US/Canada)", "NTSC-J (Japan)", "unbekannt"] %}<option {% if r == id.region %}selected{% endif %}>{{ r }}</option>{% endfor %}</select>
         </label>
+        <label class="wide inline"><input type="checkbox" name="fremdfassung" {% if id.fremdfassung %}checked{% endif %}>
+          PEGI-/Import-/NTSC-Fassung (auch mit USK auf der Disc) → immer „Alter“ KP</label>
         <label>Sprache <input type="text" name="sprache" value="{{ id.sprache }}" placeholder="–"></label>
         <label>EAN <input type="text" name="ean" value="{{ id.ean }}" inputmode="numeric" placeholder="–"></label>
         <label>Art
