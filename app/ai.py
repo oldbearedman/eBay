@@ -26,6 +26,8 @@ Regeln:
 - Versand: Angaben zum Versand AUSSCHLIESSLICH aus der Zeile „Versand für den Käufer“ übernehmen. Schreibe nur
   „versandkostenfrei“, wenn dort „kostenlos“ steht – auch wenn die Paketidee etwas anderes sagt.
 - Keine Preise in Titel oder Beschreibung (Preise können sich ändern).
+- Keine Umwelt- oder Nachhaltigkeitsaussagen („umweltfreundlich“, „nachhaltig“, „klimaneutral“, „zweites Leben“ o. Ä.)
+  und keine Garantieversprechen – beides ist seit der EU-Richtlinie 2024/825 (EmpCo) nur mit Beleg zulässig.
 - Ton: sachlich, freundlich, Sie-Form."""
 
 SCHEMA = {
