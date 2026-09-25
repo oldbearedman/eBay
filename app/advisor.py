@@ -339,6 +339,7 @@ def _run(analysis_id: int) -> None:
                 fallbacks="default",
             ) as stream:
                 response = stream.get_final_message()
+            ai.log_usage("vorschlaege", response)
             u = response.usage
             cost += ((u.input_tokens * PRICE_IN + u.output_tokens * PRICE_OUT
                       + (getattr(u, "cache_read_input_tokens", 0) or 0) * PRICE_CACHE

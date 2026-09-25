@@ -161,6 +161,7 @@ def run(item_ids: list[str], price: float, name: str = "") -> dict:
             fallbacks="default",
         ) as stream:
             response = stream.get_final_message()
+        ai.log_usage("pruefung", response)
         u = response.usage
         cost += ((u.input_tokens * advisor.PRICE_IN + u.output_tokens * advisor.PRICE_OUT
                   + (getattr(u, "cache_read_input_tokens", 0) or 0) * advisor.PRICE_CACHE

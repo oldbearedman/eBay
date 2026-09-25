@@ -45,7 +45,7 @@
       {% if id.sprache %}<span>{{ id.sprache }}</span>{% endif %}
       {% if id.ean %}<span>EAN {{ id.ean }}</span>{% endif %}
     </div>
-    <p class="small">WaWi: {% if wsel %}<b>{{ wsel.artikel }}</b> · EK {{ eur(wsel.ek) }} <span class="muted">(Sicherheit {{ d.wawi_sure }})</span>{% else %}<span class="warn">kein passender Artikel im Lager gefunden</span>{% endif %}</p>
+    <p class="small">WaWi: {% if wsel %}<b>{{ wsel.artikel }}</b> · EK {{ eur(wsel.ek) }} <span class="muted">(Sicherheit {{ d.wawi_sure }})</span>{% else %}<span class="warn">{{ d.wawi_note or "kein passender Artikel im Lager gefunden" }}</span>{% endif %}</p>
     {% if id.unsicherheiten %}
       <div class="warn-box"><b>Bitte prüfen:</b><ul class="tight">{% for u in id.unsicherheiten %}<li>{{ u }}</li>{% endfor %}</ul></div>
     {% endif %}

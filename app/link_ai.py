@@ -79,6 +79,7 @@ def run() -> dict:
         fallbacks="default",
     ) as stream:
         response = stream.get_final_message()
+    ai.log_usage("zuordnung", response)
     if response.stop_reason in ("refusal", "max_tokens"):
         raise RuntimeError(f"Claude hat nicht fertig geantwortet ({response.stop_reason}).")
     result = json.loads(next(b.text for b in response.content if b.type == "text"))

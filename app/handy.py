@@ -130,15 +130,28 @@ def identify(hid: int) -> None:
     try:
         photos = _photos(hid)
         prods = wawi.products() if wawi.available() else {}
+        # Alle offenen Artikel, feste Reihenfolge, OHNE Status: Die Liste ändert sich beim Einstellen nicht
+        # und bleibt so im Zwischenspeicher (sonst würde sie nach jedem Artikel neu – und teurer – gesendet)
         stock = [{"produktnr": p["produktnr"], "artikel": p["artikel"], "zustand": p["zustand"]}
-                 for p in prods.values() if p["status"] == "Im Lager"]
+                 for p in sorted(prods.values(), key=lambda p: p["produktnr"])
+                 if p["status"] not in ("Verkauft", "Storniert")]
         ident = ai.identify_item([_prepare(b, 1280) for b in photos], stock, platforms())
         if not ident["erkannt"]:
             raise ValueError("Claude konnte auf den Fotos keinen Artikel sicher erkennen – bitte deutlichere Fotos "
                              "machen (Vorderseite, Rückseite mit Barcode).")
         pnr = ident["wawi_produktnr"] if ident["wawi_produktnr"] in prods else ""
+        wawi_note = None
+        if pnr and prods[pnr]["status"] != "Im Lager":
+            # Treffer ist schon inseriert/reserviert → gleiches Exemplar, das noch im Lager liegt?
+            twin = next((p for p in sorted(prods.values(), key=lambda p: p["produktnr"])
+                         if p["status"] == "Im Lager" and wawi._score(p["artikel"], prods[pnr]["artikel"]) >= 0.9), None)
+            if twin:
+                pnr = twin["produktnr"]
+            else:
+                wawi_note = f"„{prods[pnr]['artikel']}“ steht in der WaWi schon auf „{prods[pnr]['status']}“ – evtl. schon online?"
+                pnr = ""
         data = {"ident": ident, "wawi_pnr": pnr, "wawi_sure": ident["wawi_sicherheit"] if pnr else "keine",
-                "wawi_candidates": _candidates(ident, prods, pnr)}
+                "wawi_note": wawi_note, "wawi_candidates": _candidates(ident, prods, pnr)}
         _set(hid, status="bestaetigen", step=None, data=data)
         _start_upload(hid, photos)   # Fotos schon hochladen, während du bestätigst
     except Exception as exc:

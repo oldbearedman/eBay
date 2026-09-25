@@ -115,6 +115,7 @@ def write_bundle_text(sources: list[dict], price: float, hint: str | None = None
         betas=["server-side-fallback-2026-07-01"],
         fallbacks="default",
     )
+    log_usage("buendeltext", response)
     if response.stop_reason == "refusal":
         raise RuntimeError("Claude hat die Anfrage abgelehnt.")
     if response.stop_reason == "max_tokens":
@@ -216,18 +217,37 @@ def _images(photos: list[bytes]) -> list[dict]:
                                          "data": base64.b64encode(data).decode()}} for data in photos[:8]]
 
 
-def _ask(system: str, content: list, schema: dict, effort: str, max_tokens: int = 16000) -> dict:
+def log_usage(task: str, response) -> None:
+    """Token-Verbrauch je Aufruf festhalten (für die Kostenübersicht)."""
+    from . import db
+    u = response.usage
+    try:
+        with db.connect() as con:
+            con.execute("""CREATE TABLE IF NOT EXISTS ai_usage (ts TEXT NOT NULL, task TEXT, model TEXT,
+                           input INTEGER, output INTEGER, cache_read INTEGER, cache_write INTEGER)""")
+            con.execute("INSERT INTO ai_usage VALUES (?, ?, ?, ?, ?, ?, ?)",
+                        (db.now_iso(), task, response.model, u.input_tokens, u.output_tokens,
+                         getattr(u, "cache_read_input_tokens", 0) or 0, getattr(u, "cache_creation_input_tokens", 0) or 0))
+    except Exception:
+        pass
+
+
+def _ask(system: str, content: list, schema: dict, effort: str, max_tokens: int = 16000,
+         task: str = "", model: str | None = None) -> dict:
     client = anthropic.Anthropic()
+    model = model or MODEL
+    fmt = {"format": {"type": "json_schema", "schema": schema}}
     with client.beta.messages.stream(
-        model=MODEL,
+        model=model,
         max_tokens=max_tokens,
         system=system,
         messages=[{"role": "user", "content": content}],
-        output_config={"effort": effort, "format": {"type": "json_schema", "schema": schema}},
+        output_config=fmt if "haiku" in model else {"effort": effort, **fmt},   # Haiku kennt kein „effort“
         betas=["server-side-fallback-2026-07-01"],
         fallbacks="default",
     ) as stream:
         response = stream.get_final_message()
+    log_usage(task, response)
     if response.stop_reason == "refusal":
         raise RuntimeError("Claude hat die Anfrage abgelehnt.")
     if response.stop_reason == "max_tokens":
@@ -235,27 +255,28 @@ def _ask(system: str, content: list, schema: dict, effort: str, max_tokens: int 
     return json.loads(next(b.text for b in response.content if b.type == "text"))
 
 
-def identify_item(photos: list[bytes], stock: list[dict], platforms: list[str]) -> dict:
+def identify_item(photos: list[bytes], stock: list[dict], platforms: list[str], model: str | None = None) -> dict:
     """Schritt 1 – was ist das? photos: JPEG-Bytes; stock: [{produktnr, artikel, zustand}] (WaWi „Im Lager“)."""
     stock_text = "\n".join(f"{s['produktnr']} | {s['artikel']} | {s['zustand']}" for s in stock) or "(leer)"
     content = [
         {"type": "text", "text": "Plattform-Liste (eBay-Werte): " + "; ".join(platforms)
                                  + "\n\nLagerliste (Produktnr | Artikel | Zustand):\n" + stock_text,
-         "cache_control": {"type": "ephemeral"}},
+         # Liste ist stabil (alle offenen WaWi-Artikel, ohne Status) → 1 h im Zwischenspeicher, fast kostenlos
+         "cache_control": {"type": "ephemeral", "ttl": "1h"}},
         *_images(photos),
         {"type": "text", "text": "Welcher Artikel ist das?"},
     ]
-    return _ask(IDENTIFY_SYSTEM, content, IDENTIFY_SCHEMA, "medium")
+    return _ask(IDENTIFY_SYSTEM, content, IDENTIFY_SCHEMA, "medium", task="erkennen", model=model)
 
 
-def assess_condition(photos: list[bytes], note: str, facts: dict) -> dict:
+def assess_condition(photos: list[bytes], note: str, facts: dict, model: str | None = None) -> dict:
     """Schritt 2 – Lieferumfang und Zustand aus Fotos + Notiz des Händlers."""
     content = [
         {"type": "text", "text": "Steckbrief (vom Händler bestätigt):\n" + json.dumps(facts, ensure_ascii=False, indent=1)},
         *_images(photos),
         {"type": "text", "text": f"Zustandsnotiz des Händlers: {note.strip() or '(keine)'}"},
     ]
-    return _ask(CONDITION_SYSTEM, content, CONDITION_SCHEMA, "medium", 8000)
+    return _ask(CONDITION_SYSTEM, content, CONDITION_SCHEMA, "medium", 8000, task="zustand", model=model)
 
 
 SINGLE_SYSTEM = """Du schreibst ein eBay.de-Angebot für einen gewerblichen Verkäufer (ein einzelner Artikel).
@@ -302,7 +323,7 @@ SKIP_ASPECTS = {"Herstellergarantie", "Ursprungsland", "Maßeinheit", "Anzahl de
 
 
 def write_single_text(facts: dict, note: str, condition_name: str, aspects: dict[str, dict],
-                      doubts: list[str] | None = None) -> dict:
+                      doubts: list[str] | None = None, model: str | None = None) -> dict:
     """→ {title, description, specifics: {Name: [Werte]}}"""
     lines = [f"eBay-Zustand: {condition_name}", f"Notiz des Händlers: {note.strip() or '(keine)'}",
              "Steckbrief (aus den Fotos erkannt):", json.dumps(facts, ensure_ascii=False, indent=1), "",
@@ -315,7 +336,7 @@ def write_single_text(facts: dict, note: str, condition_name: str, aspects: dict
         vals = rule.get("values") or []
         lines.append(f"- {name} – {'Pflicht' if rule['required'] else 'optional'} – {'mehrere' if rule['multi'] else 'einer'}"
                      + (f" – {' | '.join(vals)}" if 0 < len(vals) <= 160 else " – freier Text"))
-    data = _ask(SINGLE_SYSTEM, [{"type": "text", "text": "\n".join(lines)}], SINGLE_SCHEMA, "low", 8000)
+    data = _ask(SINGLE_SYSTEM, [{"type": "text", "text": "\n".join(lines)}], SINGLE_SCHEMA, "low", 8000, task="text", model=model)
     title = clean_title(data["title"].strip())
     specifics = {}
     for s in data["specifics"]:
