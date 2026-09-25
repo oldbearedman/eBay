@@ -42,6 +42,8 @@ CONDITION_NAMES = {"neu": "neu", "neuwertig": "neuwertig", "sehr_gut": "sehr gut
 
 TAX_NOTE_25A = "Differenzbesteuert nach § 25a UStG – die Umsatzsteuer wird nicht gesondert ausgewiesen."
 AGE_NOTE = "USK ab 18: Versand mit Altersprüfung – Übergabe nur an Personen ab 18 Jahren."
+NO_USK_NOTE = ("Dieser Artikel trägt keine deutsche USK-Kennzeichnung. Versand daher nur mit Altersprüfung – "
+               "Übergabe nur an Personen ab 18 Jahren.")
 
 
 def init() -> None:
@@ -176,7 +178,7 @@ def confirm(hid: int, form: dict) -> None:
     for key in ("name", "plattform", "edition", "sprache", "ean"):
         if key in form:
             i[key] = str(form[key]).strip()
-    if form.get("usk") in ("", "0", "6", "12", "16", "18"):
+    if form.get("usk") in ("", "0", "6", "12", "16", "18", "keine"):
         i["usk"] = form["usk"]
     if form.get("region") in ("PAL", "NTSC-U/C (US/Canada)", "NTSC-J (Japan)", "unbekannt"):
         i["region"] = form["region"]
@@ -353,7 +355,7 @@ def analyse(hid: int) -> None:
             specifics["Spielname"] = [ident["name"]]
         if "USK-Einstufung" in aspects:
             specifics.pop("USK-Einstufung", None)
-            if ident["usk"]:
+            if ident["usk"] not in ("", "keine"):
                 specifics["USK-Einstufung"] = [f"USK ab {ident['usk']} Jahren"]
         d.update(title=text["title"], body=text["description"], specifics=specifics, text_by="claude")
 
@@ -453,7 +455,8 @@ def recalc(data: dict) -> None:
     data["tax_mode"] = data.get("tax_override") or _tax_mode(w)
     tax = data["tax_mode"]
     ident = data["ident"]
-    usk18 = ident["usk"] == "18" or bool(wawi.USK18_RE.search(f"{data.get('title', '')} {(w or {}).get('artikel', '')}"))
+    # Ü18-Versand: USK 18 – und auch Ware OHNE USK-Kennzeichen (Import, nur PEGI/ESRB), § 12 Abs. 3 JuSchG
+    usk18 = ident["usk"] in ("18", "keine") or bool(wawi.USK18_RE.search(f"{data.get('title', '')} {(w or {}).get('artikel', '')}"))
     data["usk18"] = usk18
     min_a = _min_article(w, usk18, tax)
     data["min_article"] = min_a if w else None
@@ -501,7 +504,7 @@ def recalc(data: dict) -> None:
     if tax == "25a":
         hints.append(TAX_NOTE_25A)
     if usk18:
-        hints.append(AGE_NOTE)
+        hints.append(NO_USK_NOTE if ident["usk"] == "keine" else AGE_NOTE)
     data["hints"] = hints
     data["description"] = data["body"] + ("<h3>Hinweise</h3><ul>" + "".join(f"<li>{h}</li>" for h in hints) + "</ul>" if hints else "")
 

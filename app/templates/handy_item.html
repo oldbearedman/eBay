@@ -39,7 +39,7 @@
     <p class="ident-hero">{{ id.name }}{% if id.edition %} <span class="muted">· {{ id.edition }}</span>{% endif %}</p>
     <div class="ident-tags">
       <span>{{ id.plattform or "Plattform ?" }}</span>
-      {% if id.usk %}<span class="{{ 'usk18' if id.usk == '18' else '' }}">USK {{ id.usk }}</span>{% else %}<span>USK ?</span>{% endif %}
+      {% if id.usk == "keine" %}<span class="usk18">ohne USK → nur ab 18</span>{% elif id.usk %}<span class="{{ 'usk18' if id.usk == '18' else '' }}">USK {{ id.usk }}</span>{% else %}<span class="usk18">USK ? – bitte wählen</span>{% endif %}
       <span>{{ id.region }}</span>
       {% if id.sprache %}<span>{{ id.sprache }}</span>{% endif %}
       {% if id.ean %}<span>EAN {{ id.ean }}</span>{% endif %}
@@ -49,7 +49,7 @@
       <div class="warn-box"><b>Bitte prüfen:</b><ul class="tight">{% for u in id.unsicherheiten %}<li>{{ u }}</li>{% endfor %}</ul></div>
     {% endif %}
 
-    <details {% if not wsel %}open{% endif %}>
+    <details {% if not wsel or (id.artikel_typ == "videospiel" and not id.usk) %}open{% endif %}>
       <summary>✏️ Etwas falsch? Hier ändern</summary>
       <div class="edit-grid">
         <label class="wide">Name <input type="text" name="name" value="{{ id.name }}"></label>
@@ -57,7 +57,7 @@
         <datalist id="plattformen">{% for p in platforms %}<option value="{{ p }}">{% endfor %}</datalist>
         <label>Edition <input type="text" name="edition" value="{{ id.edition }}" placeholder="–"></label>
         <label>USK
-          <select name="usk">{% for u in ["", "0", "6", "12", "16", "18"] %}<option value="{{ u }}" {% if u == id.usk %}selected{% endif %}>{{ ("USK " ~ u) if u else "unbekannt" }}</option>{% endfor %}</select>
+          <select name="usk" {% if id.artikel_typ == "videospiel" %}required{% endif %}>{% for u, lbl in [("", "– bitte wählen –"), ("0", "USK 0"), ("6", "USK 6"), ("12", "USK 12"), ("16", "USK 16"), ("18", "USK 18"), ("keine", "keine USK (Import/PEGI) → Ü18-Versand")] %}<option value="{{ u }}" {% if u == id.usk %}selected{% endif %}>{{ lbl }}</option>{% endfor %}</select>
         </label>
         <label>Region
           <select name="region">{% for r in ["PAL", "NTSC-U/C (US/Canada)", "NTSC-J (Japan)", "unbekannt"] %}<option {% if r == id.region %}selected{% endif %}>{{ r }}</option>{% endfor %}</select>
@@ -123,7 +123,7 @@
   <div class="card">
     <h2>🔎 Erkannt</h2>
     <p class="t-big">{{ id.name }}{% if id.edition %} · {{ id.edition }}{% endif %}</p>
-    <p class="muted">{{ id.plattform or "Plattform ?" }} · {{ id.region }}{% if id.usk %} · USK {{ id.usk }}{% endif %}{% if id.ean %} · EAN {{ id.ean }}{% endif %}</p>
+    <p class="muted">{{ id.plattform or "Plattform ?" }} · {{ id.region }}{% if id.usk == "keine" %} · ohne USK (Ü18-Versand){% elif id.usk %} · USK {{ id.usk }}{% endif %}{% if id.ean %} · EAN {{ id.ean }}{% endif %}</p>
     <p class="small">Lieferumfang: Hülle {{ id.umfang.huelle }} · Anleitung {{ id.umfang.anleitung }} · Datenträger {{ id.umfang.datentraeger }}{% if id.umfang.sonstiges %} · {{ id.umfang.sonstiges }}{% endif %}</p>
     {% if id.zustand_details %}<ul class="small tight">{% for z in id.zustand_details %}<li>{{ z }}</li>{% endfor %}</ul>{% endif %}
     {% if d.doubts %}

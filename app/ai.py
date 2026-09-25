@@ -41,6 +41,21 @@ SCHEMA = {
 }
 
 
+TITLE_TAIL = {"in", "mit", "und", "für", "ohne", "inkl", "inkl.", "von", "der", "die", "das", "&", "+", "-", "–", "/"}
+
+
+def cut_title(title: str) -> str:
+    """Auf 80 Zeichen kürzen – am Wortende, ohne hängendes „in“, „mit“, „und“ …"""
+    if len(title) <= 80:
+        return title
+    words = title[:81].split()
+    if len(title) > 80 and not title[80].isspace():
+        words = words[:-1]          # angeschnittenes Wort weg
+    while words and words[-1].lower() in TITLE_TAIL:
+        words.pop()
+    return " ".join(words)
+
+
 def enabled() -> bool:
     return bool(os.getenv("ANTHROPIC_API_KEY"))
 
@@ -92,7 +107,7 @@ def write_bundle_text(sources: list[dict], price: float, hint: str | None = None
     data = json.loads(text)
     title = data["title"].strip()
     if len(title) > 80:
-        title = title[:80].rsplit(" ", 1)[0]
+        title = cut_title(title)
     return {"title": title, "description": data["description_html"].strip()}
 
 
@@ -105,7 +120,10 @@ gleich selbst – sei präzise und lass Felder leer, die du nicht sicher erkenns
 Aufgabe:
 1. Erkenne den Artikel: offizieller Titel, Plattform, Edition (z. B. Platinum, Classics, Essentials,
    Collector's, Steelbook – sonst leer), Region (PAL/NTSC), Sprache/Land (nur wenn erkennbar, z. B. deutsches
-   Cover/USK-Logo), Altersfreigabe (USK-Logo), Genre, Herausgeber, Erscheinungsjahr.
+   Cover/USK-Logo), Altersfreigabe, Genre, Herausgeber, Erscheinungsjahr.
+   Altersfreigabe: NUR das deutsche USK-Logo zählt. Trägt das Cover stattdessen nur PEGI oder ESRB (Import,
+   österreichische/UK-/US-Fassung), ist usk = "keine" – rechtlich gilt der Artikel dann als nicht gekennzeichnet
+   und darf nur mit Altersprüfung verschickt werden. usk = "" nur, wenn das Cover nicht zu sehen ist.
    EAN nur, wenn der Barcode mit Ziffern klar lesbar ist – sonst "".
 2. Lagerliste: Welcher Eintrag ist genau dieser Artikel (gleiches Spiel, gleiche Plattform, passende Edition)?
    Gib dessen Produktnummer zurück, sonst "". Bei mehreren gleichen Einträgen nimm den ersten.
@@ -124,7 +142,8 @@ IDENTIFY_SCHEMA = {
         "region": {"type": "string", "enum": ["PAL", "NTSC-U/C (US/Canada)", "NTSC-J (Japan)", "unbekannt"]},
         "sprache": {"type": "string"},
         "ean": {"type": "string"},
-        "usk": {"type": "string", "enum": ["", "0", "6", "12", "16", "18"]},
+        "usk": {"type": "string", "enum": ["", "0", "6", "12", "16", "18", "keine"],
+                "description": "Zahl vom USK-Logo; \"keine\" = Artikel trägt sichtbar KEIN USK-Logo (nur PEGI/ESRB, Import); \"\" = nicht erkennbar"},
         "genre": {"type": "string"},
         "herausgeber": {"type": "string"},
         "erscheinungsjahr": {"type": "string"},
@@ -275,9 +294,7 @@ def write_single_text(facts: dict, note: str, condition_name: str, aspects: dict
         lines.append(f"- {name} – {'Pflicht' if rule['required'] else 'optional'} – {'mehrere' if rule['multi'] else 'einer'}"
                      + (f" – {' | '.join(vals)}" if 0 < len(vals) <= 160 else " – freier Text"))
     data = _ask(SINGLE_SYSTEM, [{"type": "text", "text": "\n".join(lines)}], SINGLE_SCHEMA, "low", 8000)
-    title = data["title"].strip()
-    if len(title) > 80:
-        title = title[:80].rsplit(" ", 1)[0]
+    title = cut_title(data["title"].strip())
     specifics = {}
     for s in data["specifics"]:
         rule = aspects.get(s["name"])

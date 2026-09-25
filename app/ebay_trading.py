@@ -284,3 +284,20 @@ def revise_text(item_id: str, title: str | None = None, description: str | None 
     if description:
         parts.append(f"<Description><![CDATA[{description}]]></Description>")
     call("ReviseFixedPriceItem", f"<Item>{''.join(parts)}</Item>")
+
+
+def revise_listing(item_id: str, price: float | None = None, shipping_profile: str | None = None,
+                   title: str | None = None, description: str | None = None) -> None:
+    """Laufendes Angebot ändern: Preis, Versandprofil, Titel und/oder Beschreibung."""
+    parts = [f"<ItemID>{escape(item_id)}</ItemID>"]
+    if title:
+        parts.append(f"<Title>{escape(title[:80])}</Title>")
+    if description:
+        parts.append(f"<Description><![CDATA[{description}]]></Description>")
+    if price is not None:
+        parts.append(f'<StartPrice currencyID="EUR">{price:.2f}</StartPrice>')
+    if shipping_profile:
+        parts.append("<SellerProfiles><SellerShippingProfile><ShippingProfileID>"
+                     f"{escape(shipping_profile)}</ShippingProfileID></SellerShippingProfile></SellerProfiles>")
+    call("ReviseFixedPriceItem", f"<Item>{''.join(parts)}</Item>")
+
