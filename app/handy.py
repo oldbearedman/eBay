@@ -456,7 +456,10 @@ def recalc(data: dict) -> None:
     tax = data["tax_mode"]
     ident = data["ident"]
     # Ü18-Versand: USK 18 – und auch Ware OHNE USK-Kennzeichen (Import, nur PEGI/ESRB), § 12 Abs. 3 JuSchG
-    usk18 = ident["usk"] in ("18", "keine") or bool(wawi.USK18_RE.search(f"{data.get('title', '')} {(w or {}).get('artikel', '')}"))
+    no_usk = ident["artikel_typ"] == "videospiel" and (
+        ident["usk"] in ("", "keine") or ident["region"].startswith("NTSC"))   # Import/PEGI/unbekannt → wie „keine USK“
+    data["no_usk"] = no_usk
+    usk18 = ident["usk"] == "18" or no_usk or bool(wawi.USK18_RE.search(f"{data.get('title', '')} {(w or {}).get('artikel', '')}"))
     data["usk18"] = usk18
     min_a = _min_article(w, usk18, tax)
     data["min_article"] = min_a if w else None
@@ -504,7 +507,7 @@ def recalc(data: dict) -> None:
     if tax == "25a":
         hints.append(TAX_NOTE_25A)
     if usk18:
-        hints.append(NO_USK_NOTE if ident["usk"] == "keine" else AGE_NOTE)
+        hints.append(NO_USK_NOTE if no_usk and ident["usk"] != "18" else AGE_NOTE)
     data["hints"] = hints
     data["description"] = data["body"] + ("<h3>Hinweise</h3><ul>" + "".join(f"<li>{h}</li>" for h in hints) + "</ul>" if hints else "")
 
@@ -544,7 +547,7 @@ def update(hid: int, form: dict) -> None:
     if h["status"] != "bereit":
         raise ValueError("Dieser Artikel kann nicht mehr geändert werden.")
     d = h["data"]
-    d["title"] = (form.get("title") or d["title"]).strip()[:80]
+    d["title"] = ai.clean_title((form.get("title") or d["title"]).strip())
     if form.get("body"):
         d["body"] = form["body"]
     if form.get("condition_id") and any(c["id"] == form["condition_id"] for c in d["conditions"]):

@@ -44,6 +44,22 @@ SCHEMA = {
 TITLE_TAIL = {"in", "mit", "und", "für", "ohne", "inkl", "inkl.", "von", "der", "die", "das", "&", "+", "-", "–", "/"}
 
 
+# Hausregel: Fassung/Herkunft gehört nie in den Titel (steht bei Bedarf sachlich in der Beschreibung)
+TITLE_BANNED = re.compile(
+    r"\(?\b(?:pegi(?:\s*-?\s*\d+)?|import(?:version|ware|spiel)?|imported|ntsc(?:\s*-?\s*(?:u/c|u|j|c))?"
+    r"|(?:us|uk|eu|at|ch|jp|jap|asia)\s*-?\s*(?:version|fassung|import|cover)|esrb|mature(?:\s*17\+?)?"
+    r"|m\s*17\+?|(?:österreich|austria)\w*(?:\s*-?\s*(?:version|fassung))?)(?!\w)\)?", re.I)
+
+
+def clean_title(title: str) -> str:
+    """PEGI, Import, NTSC, US-/UK-Version usw. aus dem Titel entfernen und sauber kürzen."""
+    t = TITLE_BANNED.sub(" ", title)
+    t = re.sub(r"\(\s*\)|\[\s*\]", " ", t)                       # leere Klammern
+    t = re.sub(r"\s*([|/–-])\s*(?=[|/–-]|$)", " ", t)              # hängende Trenner
+    t = re.sub(r"\s{2,}", " ", t).strip(" |/–-,")
+    return cut_title(t)
+
+
 def cut_title(title: str) -> str:
     """Auf 80 Zeichen kürzen – am Wortende, ohne hängendes „in“, „mit“, „und“ …"""
     if len(title) <= 80:
@@ -108,7 +124,7 @@ def write_bundle_text(sources: list[dict], price: float, hint: str | None = None
     title = data["title"].strip()
     if len(title) > 80:
         title = cut_title(title)
-    return {"title": title, "description": data["description_html"].strip()}
+    return {"title": clean_title(title), "description": data["description_html"].strip()}
 
 
 # ── Handy: Artikel auf Fotos erkennen, Einzelangebot schreiben ─────────
@@ -248,6 +264,8 @@ Regeln:
 - Titel: höchstens 80 Zeichen, Deutsch. Spielname und Plattform nach vorne, dann wichtige Suchbegriffe
   (z. B. PAL, deutsch, OVP/komplett mit Anleitung, Edition). Keine Großbuchstaben-Wörter nur zur Betonung,
   keine Sonderzeichen-Spielereien, keine Zustandswörter wie „TOP“.
+  NIEMALS im Titel: PEGI, Import, NTSC, US-/UK-/EU-Version, ESRB, Mature o. Ä. – auch wenn es so im Steckbrief
+  steht. Region/Fassung wird (falls wichtig) nur sachlich in der Beschreibung erwähnt.
 - Beschreibung: schlichtes HTML (nur <h2>, <h3>, <p>, <ul>, <li>, <b>, <br>). Aufbau: kurze Einleitung,
   „Lieferumfang“ als Liste, „Zustand“ als Liste (sachlich, auch Mängel klar benennen), optional kurz „Zum Spiel“
   mit Eckdaten (Genre, Erscheinungsjahr) – nur, wenn sie im Steckbrief stehen.
@@ -294,7 +312,7 @@ def write_single_text(facts: dict, note: str, condition_name: str, aspects: dict
         lines.append(f"- {name} – {'Pflicht' if rule['required'] else 'optional'} – {'mehrere' if rule['multi'] else 'einer'}"
                      + (f" – {' | '.join(vals)}" if 0 < len(vals) <= 160 else " – freier Text"))
     data = _ask(SINGLE_SYSTEM, [{"type": "text", "text": "\n".join(lines)}], SINGLE_SCHEMA, "low", 8000)
-    title = cut_title(data["title"].strip())
+    title = clean_title(data["title"].strip())
     specifics = {}
     for s in data["specifics"]:
         rule = aspects.get(s["name"])
