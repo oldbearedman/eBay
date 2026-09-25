@@ -548,6 +548,7 @@ def handy_item(request: Request, hid: int, info: str = "", fehler: str = ""):
     return templates.TemplateResponse(request, "handy_item.html", {
         "h": h, "d": h["data"], "info": info, "fehler": fehler,
         "storage": handy.storage_rows() if h["status"] == "bereit" else [],
+        "platforms": handy.platforms() if h["status"] == "bestaetigen" else [],
         "ebay_url": handy.item_url(h["item_id"]) if h["item_id"] else None,
     })
 
@@ -578,7 +579,16 @@ async def handy_action(request: Request, hid: int):
             handy.discard(hid)
             return _back("/handy", info="Verworfen.")
         if action == "neu":
-            handy.start(hid)
+            handy.restart(hid)
+            return RedirectResponse(url, status_code=303)
+        if action == "neu_erkennen":
+            handy.start_identify(hid)
+            return RedirectResponse(url, status_code=303)
+        if action == "zurueck":
+            handy.back_to_confirm(hid)
+            return RedirectResponse(url, status_code=303)
+        if action == "bestaetigen":
+            handy.confirm(hid, form)
             return RedirectResponse(url, status_code=303)
         await asyncio.to_thread(handy.update, hid, form)
         if action == "einstellen":

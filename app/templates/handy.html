@@ -1,6 +1,6 @@
 {% extends "base.html" %}
 {% block title %}Handy · eBay Manager{% endblock %}
-{% set labels = {"analyse": "wird analysiert", "bereit": "Vorschau bereit", "einstellen": "wird eingestellt",
+{% set labels = {"erkennen": "wird erkannt", "bestaetigen": "bitte bestätigen", "analyse": "wird erstellt", "bereit": "Vorschau bereit", "einstellen": "wird eingestellt",
                  "online": "Online", "fehler": "Fehler"} %}
 {% block content %}
 <div class="narrow handy">
@@ -20,12 +20,9 @@
       <span>🖼️</span>Aus Galerie
     </label>
   </div>
-  <p class="muted small">Tipp: Vorderseite zuerst (wird das Hauptbild), dann Rückseite mit Barcode, Disc/Modul, Anleitung, Mängel. Antippen entfernt ein Foto.</p>
+  <p class="muted small">Danach zeigt dir die Seite, welcher Artikel erkannt wurde – du bestätigst und sagst den Zustand. Tipp: Vorderseite zuerst (wird das Hauptbild), dann Rückseite mit Barcode, Disc/Modul, Anleitung, Mängel. Antippen entfernt ein Foto.</p>
 
-  <label class="note-label" for="notiz">Zustand kurz beschreiben <span class="muted small">(Mikrofon der Tastatur zum Sprechen)</span></label>
-  <textarea id="notiz" name="notiz" rows="3" placeholder="z. B. komplett mit Anleitung, Disc leichte Kratzer, Hülle top"></textarea>
-
-  <button class="btn big" id="go" type="submit" disabled>✨ Angebot erstellen lassen</button>
+  <button class="btn big" id="go" type="submit" disabled>🔎 Artikel erkennen</button>
   <p class="muted small" id="progress" hidden></p>
 </form>
 
@@ -91,7 +88,6 @@
     go.disabled = true; progress.hidden = false; progress.textContent = 'Fotos werden hochgeladen …';
     const fd = new FormData();
     photos.forEach((b, i) => fd.append('fotos', b, `foto${i + 1}.jpg`));
-    fd.append('notiz', document.getElementById('notiz').value);
     try {
       const r = await fetch('/handy', { method: 'POST', body: fd });
       const j = await r.json();

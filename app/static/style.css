@@ -404,8 +404,8 @@ h3.form-section { font-size: 15px; margin: 8px 0 10px; padding-top: 10px; border
 .handy-row img { width: 64px; height: 64px; object-fit: cover; border-radius: 10px; flex: none; }
 .handy-row .t { margin: 4px 0 2px; font-weight: 800; }
 .handy-row p { margin: 0; }
-.hs-analyse, .hs-einstellen { background: var(--accent-soft); color: var(--accent); }
-.hs-bereit { background: var(--warn-soft); color: var(--warn); }
+.hs-analyse, .hs-einstellen, .hs-erkennen { background: var(--accent-soft); color: var(--accent); }
+.hs-bereit, .hs-bestaetigen { background: var(--warn-soft); color: var(--warn); }
 .hs-online { background: var(--ok-soft); color: var(--ok); }
 .hs-fehler { background: var(--error-soft); color: var(--error); }
 .photo-strip { display: flex; gap: 8px; overflow-x: auto; margin-bottom: 8px; padding-bottom: 4px; }
@@ -431,3 +431,9 @@ h3.form-section { font-size: 15px; margin: 8px 0 10px; padding-top: 10px; border
 .sticky-actions .actions-row { margin-top: 8px; }
 .sticky-actions .actions-row .btn { flex: 1; }
 @media (max-width: 720px) { main:has(.handy) { padding-top: 14px; } }
+.ident-hero { font-size: 21px; font-weight: 800; margin: 2px 0 6px; line-height: 1.25; }
+.ident-tags { display: flex; gap: 6px; flex-wrap: wrap; margin-bottom: 8px; }
+.ident-tags span { background: var(--neutral-soft); border-radius: 99px; padding: 2px 10px; font-size: 13px; font-weight: 700; }
+.ident-tags .usk18 { background: var(--error-soft); color: var(--error); }
+.edit-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 0 10px; margin-top: 10px; }
+.edit-grid .wide { grid-column: 1 / -1; }

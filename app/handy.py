@@ -19,7 +19,7 @@ PHOTO_DIR.mkdir(parents=True, exist_ok=True)
 SCHEMA = """
 CREATE TABLE IF NOT EXISTS handy_items (
     id          INTEGER PRIMARY KEY AUTOINCREMENT,
-    status      TEXT NOT NULL DEFAULT 'analyse',  -- analyse | bereit | einstellen | online | fehler | verworfen
+    status      TEXT NOT NULL DEFAULT 'erkennen',  -- erkennen | bestaetigen | analyse | bereit | einstellen | online | fehler | verworfen
     step        TEXT,
     note        TEXT NOT NULL DEFAULT '',
     photos      INTEGER NOT NULL DEFAULT 0,
@@ -47,9 +47,11 @@ AGE_NOTE = "USK ab 18: Versand mit Altersprüfung – Übergabe nur an Personen 
 def init() -> None:
     with db.connect() as con:
         con.executescript(SCHEMA)
+        if "pictures" not in {r["name"] for r in con.execute("PRAGMA table_info(handy_items)")}:
+            con.execute("ALTER TABLE handy_items ADD COLUMN pictures TEXT")   # eBay-Bild-Adressen (JSON)
         # Beim Neustart abgebrochene Analysen/Einstellvorgänge nicht ewig „laufend“ zeigen
         con.execute("UPDATE handy_items SET status = 'fehler', error = 'Unterbrochen (Neustart) – bitte neu analysieren.' "
-                    "WHERE status = 'analyse'")
+                    "WHERE status IN ('analyse', 'erkennen')")
         con.execute("UPDATE handy_items SET status = 'bereit' WHERE status = 'einstellen' AND item_id IS NULL")
 
 
@@ -93,7 +95,7 @@ def _prepare(raw: bytes, size: int) -> bytes:
     return out.getvalue()
 
 
-def create(files: list[bytes], note: str) -> int:
+def create(files: list[bytes], note: str = "") -> int:
     files = [f for f in files if f][:MAX_PHOTOS]
     if not files:
         raise ValueError("Bitte mindestens ein Foto aufnehmen.")
@@ -105,22 +107,122 @@ def create(files: list[bytes], note: str) -> int:
     for n, raw in enumerate(files, 1):
         photo_path(hid, n).write_bytes(_prepare(raw, 1600))
     _set(hid, photos=len(files))
-    start(hid)
+    start_identify(hid)
     return hid
 
 
-def start(hid: int) -> None:
-    _set(hid, status="analyse", error=None, step="Analyse startet …")
+def _photos(hid: int, h: dict | None = None) -> list[bytes]:
+    h = h or get(hid)
+    return [photo_path(hid, n).read_bytes() for n in range(1, h["photos"] + 1)]
+
+
+# Schritt 1: Was ist das? ──────────────────────────────────────────────
+
+def start_identify(hid: int) -> None:
+    _set(hid, status="erkennen", error=None, step="Claude erkennt den Artikel …")
+    threading.Thread(target=identify, args=(hid,), daemon=True).start()
+
+
+def identify(hid: int) -> None:
+    try:
+        photos = _photos(hid)
+        prods = wawi.products() if wawi.available() else {}
+        stock = [{"produktnr": p["produktnr"], "artikel": p["artikel"], "zustand": p["zustand"]}
+                 for p in prods.values() if p["status"] == "Im Lager"]
+        ident = ai.identify_item([_prepare(b, 1280) for b in photos], stock, platforms())
+        if not ident["erkannt"]:
+            raise ValueError("Claude konnte auf den Fotos keinen Artikel sicher erkennen – bitte deutlichere Fotos "
+                             "machen (Vorderseite, Rückseite mit Barcode).")
+        pnr = ident["wawi_produktnr"] if ident["wawi_produktnr"] in prods else ""
+        data = {"ident": ident, "wawi_pnr": pnr, "wawi_sure": ident["wawi_sicherheit"] if pnr else "keine",
+                "wawi_candidates": _candidates(ident, prods, pnr)}
+        _set(hid, status="bestaetigen", step=None, data=data)
+        _start_upload(hid, photos)   # Fotos schon hochladen, während du bestätigst
+    except Exception as exc:
+        log.exception("Handy-Erkennung %s fehlgeschlagen", hid)
+        _set(hid, status="fehler", step=None, error=str(exc)[:600])
+
+
+def platforms() -> list[str]:
+    try:
+        return ebay_account.category_aspects(VIDEOGAME_CAT).get("Plattform", {}).get("values", [])
+    except Exception:
+        return list(bundles.PLATFORM_SHORT)
+
+
+_uploads: dict[int, threading.Thread] = {}
+
+
+def _start_upload(hid: int, photos: list[bytes]) -> None:
+    def run():
+        try:
+            urls = [ebay_trading.upload_picture(b, f"handy-{hid}-{n}.jpg") for n, b in enumerate(photos, 1)]
+            _set(hid, pictures=json.dumps(urls))
+        except Exception:
+            log.exception("Foto-Upload %s fehlgeschlagen – wird beim Erstellen wiederholt", hid)
+    t = threading.Thread(target=run, daemon=True)
+    _uploads[hid] = t
+    t.start()
+
+
+def confirm(hid: int, form: dict) -> None:
+    """Erkennung bestätigt/korrigiert + Zustandsnotiz → Schritt 2 startet."""
+    h = get(hid)
+    if h["status"] not in ("bestaetigen", "bereit", "fehler"):
+        raise ValueError("Dieser Artikel wird gerade bearbeitet.")
+    d = h["data"]
+    i = d["ident"]
+    old = (i["name"], i["plattform"])
+    for key in ("name", "plattform", "edition", "sprache", "ean"):
+        if key in form:
+            i[key] = str(form[key]).strip()
+    if form.get("usk") in ("", "0", "6", "12", "16", "18"):
+        i["usk"] = form["usk"]
+    if form.get("region") in ("PAL", "NTSC-U/C (US/Canada)", "NTSC-J (Japan)", "unbekannt"):
+        i["region"] = form["region"]
+    if form.get("artikel_typ") in ("videospiel", "konsole", "zubehoer", "film_musik", "buch", "sonstiges"):
+        i["artikel_typ"] = form["artikel_typ"]
+    if (i["name"], i["plattform"]) != old:
+        i["suchbegriff"] = f"{i['name']} {_platform_short(i) or i['plattform']}".strip()
+    if not i["name"]:
+        raise ValueError("Bitte den Artikelnamen eintragen.")
+    if "wawi_pnr" in form:
+        d["wawi_pnr"] = form["wawi_pnr"] or ""
+    d["confirmed"] = True
+    for k in ("price_choice", "custom_price"):   # neue Analyse → neuer Preisvorschlag
+        d.pop(k, None)
+    _set(hid, note=str(form.get("notiz", h["note"]) or "").strip(), data=d)
+    start_analyse(hid)
+
+
+def back_to_confirm(hid: int) -> None:
+    h = get(hid)
+    if h["status"] in ("bereit", "fehler") and h["data"].get("ident"):
+        _set(hid, status="bestaetigen", error=None)
+
+
+def restart(hid: int) -> None:
+    """Nach einem Fehler: an der richtigen Stelle neu anfangen."""
+    h = get(hid)
+    if h["data"].get("confirmed"):
+        start_analyse(hid)
+    else:
+        start_identify(hid)
+
+
+def start_analyse(hid: int) -> None:
+    _set(hid, status="analyse", error=None, step="Claude sieht sich den Zustand an …")
     threading.Thread(target=analyse, args=(hid,), daemon=True).start()
 
 
 def discard(hid: int) -> None:
     h = get(hid)
-    if h and h["status"] in ("bereit", "fehler"):
+    if h and h["status"] in ("bereit", "fehler", "bestaetigen"):
         _set(hid, status="verworfen")
 
 
 # ── Analyse ─────────────────────────────────────────────────────────────
+
 
 def _category(ident: dict) -> tuple[str, str]:
     prefer = {"videospiel": VIDEOGAME_CAT, "konsole": CONSOLE_CAT}.get(ident["artikel_typ"])
@@ -214,53 +316,62 @@ def _defaults() -> dict:
 
 
 def analyse(hid: int) -> None:
+    """Schritt 2: Zustand (Fotos + Notiz), Kategorie, Marktpreise, Text, eBay-Prüfung."""
     try:
         h = get(hid)
-        photos = [photo_path(hid, n).read_bytes() for n in range(1, h["photos"] + 1)]
-        _set(hid, step="Claude sieht sich die Fotos an …")
-        prods = wawi.products() if wawi.available() else {}
-        stock = [{"produktnr": p["produktnr"], "artikel": p["artikel"], "zustand": p["zustand"]}
-                 for p in prods.values() if p["status"] == "Im Lager"]
-        platforms = ebay_account.category_aspects(VIDEOGAME_CAT).get("Plattform", {}).get("values", [])
-        ident = ai.identify_item([_prepare(b, 1280) for b in photos], h["note"], stock, platforms)
-        if not ident["erkannt"]:
-            raise ValueError("Claude konnte auf den Fotos keinen Artikel sicher erkennen – bitte deutlichere Fotos "
-                             "machen (Vorderseite, Rückseite mit Barcode).")
+        d = h["data"]
+        ident = d["ident"]
+        photos = _photos(hid, h)
+        facts = {k: v for k, v in ident.items()
+                 if k not in ("wawi_produktnr", "wawi_sicherheit", "unsicherheiten", "suchbegriff", "erkannt")}
+        cond_info = ai.assess_condition([_prepare(b, 1280) for b in photos], h["note"], facts)
+        ident.update(umfang=cond_info["umfang"], zustand=cond_info["zustand"], zustand_details=cond_info["zustand_details"])
+        d["doubts"] = cond_info["unsicherheiten"]
 
-        _set(hid, step="Kategorie, Zustand & Marktpreise …")
+        _set(hid, step="Kategorie & Marktpreise …")
+        prods = wawi.products() if wawi.available() else {}
+        pnr = d.get("wawi_pnr") if d.get("wawi_pnr") in prods else ""
         cat_id, cat_name = _category(ident)
         conds = ebay_account.conditions(cat_id)
         cond = _condition(ident["zustand"], conds)
-        pnr = ident["wawi_produktnr"] if ident["wawi_produktnr"] in prods else ""
-        data = {
-            "ident": ident, "category_id": cat_id, "category_name": cat_name, "conditions": conds,
-            "condition_id": cond["id"], "wawi_pnr": pnr, "wawi_sure": ident["wawi_sicherheit"] if pnr else "keine",
-            "wawi_candidates": _candidates(ident, prods, pnr), "ean": ident["ean"] if _valid_gtin(ident["ean"]) else None,
+        d.update({
+            "category_id": cat_id, "category_name": cat_name, "conditions": conds, "condition_id": cond["id"],
+            "wawi_pnr": pnr, "wawi_candidates": _candidates(ident, prods, pnr),
+            "ean": ident["ean"] if _valid_gtin(ident["ean"]) else None,
             "market": _market(ident, cat_id, cond["id"], prods[pnr]["artikel"] if pnr else None),
             **_defaults(),
-        }
+        })
 
         _set(hid, step="Claude schreibt Titel & Beschreibung …")
         aspects = ebay_account.category_aspects(cat_id)
-        facts = {k: v for k, v in ident.items() if k not in ("wawi_produktnr", "wawi_sicherheit", "unsicherheiten", "suchbegriff", "erkannt")}
-        text = ai.write_single_text(facts, h["note"], cond["name"], aspects, ident["unsicherheiten"])
+        facts.update(umfang=ident["umfang"], zustand=ident["zustand"], zustand_details=ident["zustand_details"])
+        text = ai.write_single_text(facts, h["note"], cond["name"], aspects, d["doubts"])
         specifics = text["specifics"]
-        if "Plattform" in aspects and ident["plattform"] and "Plattform" not in specifics:
-            specifics["Plattform"] = [ident["plattform"]]
+        if "Plattform" in aspects and ident["plattform"]:
+            specifics["Plattform"] = [ident["plattform"]]      # vom Händler bestätigt
         if "Spielname" in aspects and ident["name"] and "Spielname" not in specifics:
             specifics["Spielname"] = [ident["name"]]
-        if "USK-Einstufung" in aspects and ident["usk"] and "USK-Einstufung" not in specifics:
-            specifics["USK-Einstufung"] = [f"USK ab {ident['usk']} Jahren"]
-        data.update(title=text["title"], body=text["description"], specifics=specifics, text_by="claude")
+        if "USK-Einstufung" in aspects:
+            specifics.pop("USK-Einstufung", None)
+            if ident["usk"]:
+                specifics["USK-Einstufung"] = [f"USK ab {ident['usk']} Jahren"]
+        d.update(title=text["title"], body=text["description"], specifics=specifics, text_by="claude")
 
         _set(hid, step="Fotos zu eBay hochladen …")
-        data["pictures"] = [ebay_trading.upload_picture(b, f"handy-{hid}-{n}.jpg") for n, b in enumerate(photos, 1)]
+        t = _uploads.pop(hid, None)
+        if t:
+            t.join(180)
+        pics = json.loads(get(hid).get("pictures") or "[]")
+        if len(pics) != len(photos):
+            pics = [ebay_trading.upload_picture(b, f"handy-{hid}-{n}.jpg") for n, b in enumerate(photos, 1)]
+            _set(hid, pictures=json.dumps(pics))
+        d["pictures"] = pics
 
         _set(hid, step="Preis, Versand & Gewinn berechnen …")
-        recalc(data)
+        recalc(d)
         _set(hid, step="eBay prüft das Angebot …")
-        verify(data)
-        _set(hid, status="bereit", step=None, data=data)
+        verify(d)
+        _set(hid, status="bereit", step=None, data=d)
     except Exception as exc:
         log.exception("Handy-Analyse %s fehlgeschlagen", hid)
         _set(hid, status="fehler", step=None, error=str(exc)[:600])

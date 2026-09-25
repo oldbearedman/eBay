@@ -99,21 +99,19 @@ def write_bundle_text(sources: list[dict], price: float, hint: str | None = None
 # ── Handy: Artikel auf Fotos erkennen, Einzelangebot schreiben ─────────
 
 IDENTIFY_SYSTEM = """Du hilfst einem gewerblichen eBay.de-Händler für gebrauchte Videospiele, Konsolen und Zubehör.
-Du bekommst Fotos EINES Artikels, eine kurze Zustandsnotiz des Händlers und seine Lagerliste (Warenwirtschaft).
+Du bekommst Fotos EINES Artikels und seine Lagerliste (Warenwirtschaft). Der Händler bestätigt deine Erkennung
+gleich selbst – sei präzise und lass Felder leer, die du nicht sicher erkennst.
 
 Aufgabe:
-1. Erkenne den Artikel so genau wie möglich: offizieller Titel, Plattform, Edition (z. B. Platinum, Classics,
-   Essentials, Collector's, Steelbook), Region (PAL/NTSC), Sprache/Land, Altersfreigabe (USK-Logo), Genre,
-   Herausgeber, Erscheinungsjahr. Lies eine EAN nur ab, wenn der Barcode mit Ziffern klar lesbar ist – sonst "".
-2. Lieferumfang: Was ist auf den Fotos tatsächlich zu sehen (Hülle, Anleitung, Datenträger/Modul)?
-   Nicht Sichtbares = "unklar", außer die Notiz des Händlers sagt es ausdrücklich.
-3. Zustand: aus Notiz UND Fotos. Die Notiz des Händlers hat Vorrang. Beschreibe nur Sichtbares bzw. Genanntes,
-   sachlich und ohne Beschönigung (z. B. „Disc mit leichten Gebrauchsspuren“, „Hülle mit Riss am Scharnier“).
-4. Lagerliste: Welcher Eintrag ist genau dieser Artikel (gleiches Spiel, gleiche Plattform, passende Edition)?
+1. Erkenne den Artikel: offizieller Titel, Plattform, Edition (z. B. Platinum, Classics, Essentials,
+   Collector's, Steelbook – sonst leer), Region (PAL/NTSC), Sprache/Land (nur wenn erkennbar, z. B. deutsches
+   Cover/USK-Logo), Altersfreigabe (USK-Logo), Genre, Herausgeber, Erscheinungsjahr.
+   EAN nur, wenn der Barcode mit Ziffern klar lesbar ist – sonst "".
+2. Lagerliste: Welcher Eintrag ist genau dieser Artikel (gleiches Spiel, gleiche Plattform, passende Edition)?
    Gib dessen Produktnummer zurück, sonst "". Bei mehreren gleichen Einträgen nimm den ersten.
    Sicherheit: hoch = eindeutig; mittel = sehr wahrscheinlich; niedrig = geraten; keine = kein Eintrag passt.
-5. Unsicherheiten: alles, was der Händler vor dem Einstellen prüfen sollte (z. B. „Edition nicht erkennbar“).
-6. Suchbegriff für die eBay-Suche nach Vergleichsangeboten: Spielname + Plattform-Kurzform, ohne Füllwörter."""
+3. Unsicherheiten: nur zur ERKENNUNG (z. B. „Edition nicht erkennbar“, „zweites Spiel auf Foto 1“).
+4. Suchbegriff für die eBay-Suche nach Vergleichsangeboten: Spielname + Plattform-Kurzform, ohne Füllwörter."""
 
 IDENTIFY_SCHEMA = {
     "type": "object",
@@ -127,6 +125,32 @@ IDENTIFY_SCHEMA = {
         "sprache": {"type": "string"},
         "ean": {"type": "string"},
         "usk": {"type": "string", "enum": ["", "0", "6", "12", "16", "18"]},
+        "genre": {"type": "string"},
+        "herausgeber": {"type": "string"},
+        "erscheinungsjahr": {"type": "string"},
+        "wawi_produktnr": {"type": "string"},
+        "wawi_sicherheit": {"type": "string", "enum": ["hoch", "mittel", "niedrig", "keine"]},
+        "unsicherheiten": {"type": "array", "items": {"type": "string"}},
+        "suchbegriff": {"type": "string"},
+    },
+    "required": ["erkannt", "artikel_typ", "name", "plattform", "edition", "region", "sprache", "ean", "usk",
+                 "genre", "herausgeber", "erscheinungsjahr", "wawi_produktnr", "wawi_sicherheit", "unsicherheiten",
+                 "suchbegriff"],
+    "additionalProperties": False,
+}
+
+CONDITION_SYSTEM = """Du beurteilst für einen gewerblichen eBay.de-Händler Lieferumfang und Zustand EINES gebrauchten
+Artikels. Der Artikel ist bereits bestätigt (Steckbrief). Du bekommst die Fotos und die Zustandsnotiz des Händlers.
+
+- Lieferumfang: Was ist tatsächlich zu sehen bzw. laut Notiz dabei (Hülle, Anleitung, Datenträger/Modul)?
+  Nicht Sichtbares und nicht Genanntes = "unklar".
+- Zustand: Die Notiz des Händlers hat Vorrang, die Fotos ergänzen. Nur Sichtbares bzw. Genanntes beschreiben,
+  sachlich und ohne Beschönigung (z. B. „Disc mit leichten Gebrauchsspuren“, „Hülle mit Riss am Scharnier“).
+- Unsicherheiten: nur zu Zustand/Lieferumfang, was der Händler vor dem Einstellen prüfen sollte."""
+
+CONDITION_SCHEMA = {
+    "type": "object",
+    "properties": {
         "umfang": {
             "type": "object",
             "properties": {
@@ -140,19 +164,17 @@ IDENTIFY_SCHEMA = {
         },
         "zustand": {"type": "string", "enum": ["neu", "neuwertig", "sehr_gut", "gut", "akzeptabel", "defekt"]},
         "zustand_details": {"type": "array", "items": {"type": "string"}},
-        "genre": {"type": "string"},
-        "herausgeber": {"type": "string"},
-        "erscheinungsjahr": {"type": "string"},
-        "wawi_produktnr": {"type": "string"},
-        "wawi_sicherheit": {"type": "string", "enum": ["hoch", "mittel", "niedrig", "keine"]},
         "unsicherheiten": {"type": "array", "items": {"type": "string"}},
-        "suchbegriff": {"type": "string"},
     },
-    "required": ["erkannt", "artikel_typ", "name", "plattform", "edition", "region", "sprache", "ean", "usk", "umfang",
-                 "zustand", "zustand_details", "genre", "herausgeber", "erscheinungsjahr", "wawi_produktnr",
-                 "wawi_sicherheit", "unsicherheiten", "suchbegriff"],
+    "required": ["umfang", "zustand", "zustand_details", "unsicherheiten"],
     "additionalProperties": False,
 }
+
+
+def _images(photos: list[bytes]) -> list[dict]:
+    import base64
+    return [{"type": "image", "source": {"type": "base64", "media_type": "image/jpeg",
+                                         "data": base64.b64encode(data).decode()}} for data in photos[:8]]
 
 
 def _ask(system: str, content: list, schema: dict, effort: str, max_tokens: int = 16000) -> dict:
@@ -174,20 +196,27 @@ def _ask(system: str, content: list, schema: dict, effort: str, max_tokens: int 
     return json.loads(next(b.text for b in response.content if b.type == "text"))
 
 
-def identify_item(photos: list[bytes], note: str, stock: list[dict], platforms: list[str]) -> dict:
-    """photos: JPEG-Bytes; stock: [{produktnr, artikel, zustand}] (WaWi „Im Lager“) → Steckbrief laut IDENTIFY_SCHEMA."""
-    import base64
+def identify_item(photos: list[bytes], stock: list[dict], platforms: list[str]) -> dict:
+    """Schritt 1 – was ist das? photos: JPEG-Bytes; stock: [{produktnr, artikel, zustand}] (WaWi „Im Lager“)."""
     stock_text = "\n".join(f"{s['produktnr']} | {s['artikel']} | {s['zustand']}" for s in stock) or "(leer)"
     content = [
         {"type": "text", "text": "Plattform-Liste (eBay-Werte): " + "; ".join(platforms)
                                  + "\n\nLagerliste (Produktnr | Artikel | Zustand):\n" + stock_text,
          "cache_control": {"type": "ephemeral"}},
+        *_images(photos),
+        {"type": "text", "text": "Welcher Artikel ist das?"},
     ]
-    for data in photos[:8]:
-        content.append({"type": "image", "source": {"type": "base64", "media_type": "image/jpeg",
-                                                     "data": base64.b64encode(data).decode()}})
-    content.append({"type": "text", "text": f"Zustandsnotiz des Händlers: {note.strip() or '(keine)'}"})
-    return _ask(IDENTIFY_SYSTEM, content, IDENTIFY_SCHEMA, "high")
+    return _ask(IDENTIFY_SYSTEM, content, IDENTIFY_SCHEMA, "medium")
+
+
+def assess_condition(photos: list[bytes], note: str, facts: dict) -> dict:
+    """Schritt 2 – Lieferumfang und Zustand aus Fotos + Notiz des Händlers."""
+    content = [
+        {"type": "text", "text": "Steckbrief (vom Händler bestätigt):\n" + json.dumps(facts, ensure_ascii=False, indent=1)},
+        *_images(photos),
+        {"type": "text", "text": f"Zustandsnotiz des Händlers: {note.strip() or '(keine)'}"},
+    ]
+    return _ask(CONDITION_SYSTEM, content, CONDITION_SCHEMA, "medium", 8000)
 
 
 SINGLE_SYSTEM = """Du schreibst ein eBay.de-Angebot für einen gewerblichen Verkäufer (ein einzelner Artikel).

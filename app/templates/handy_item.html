@@ -12,11 +12,11 @@
 </div>
 {% if h.note %}<p class="muted small">Deine Notiz: „{{ h.note }}“</p>{% endif %}
 
-{% if h.status in ("analyse", "einstellen") %}
+{% if h.status in ("erkennen", "analyse", "einstellen") %}
   <div class="card center">
     <div class="spinner"></div>
     <p id="step"><b>{{ h.step or "Bitte warten …" }}</b></p>
-    <p class="muted small">Dauert meist 30–90 Sekunden. Du kannst die Seite offen lassen – sie aktualisiert sich selbst.</p>
+    <p class="muted small">{% if h.status == "erkennen" %}Dauert meist 10–20 Sekunden{% else %}Dauert meist 30–60 Sekunden{% endif %}. Die Seite aktualisiert sich selbst.</p>
   </div>
   <script>
     (async function poll() {
@@ -29,11 +29,76 @@
     })();
   </script>
 
+{% elif h.status == "bestaetigen" %}
+{% set id = d.ident %}
+{% set wsel = d.wawi_candidates|selectattr("produktnr", "equalto", d.wawi_pnr)|first %}
+<form method="post" class="handy-form" id="f">
+  <input type="hidden" name="aktion" value="bestaetigen" id="aktion">
+  <div class="card">
+    <p class="muted small" style="margin:0">Das ist:</p>
+    <p class="ident-hero">{{ id.name }}{% if id.edition %} <span class="muted">· {{ id.edition }}</span>{% endif %}</p>
+    <div class="ident-tags">
+      <span>{{ id.plattform or "Plattform ?" }}</span>
+      {% if id.usk %}<span class="{{ 'usk18' if id.usk == '18' else '' }}">USK {{ id.usk }}</span>{% else %}<span>USK ?</span>{% endif %}
+      <span>{{ id.region }}</span>
+      {% if id.sprache %}<span>{{ id.sprache }}</span>{% endif %}
+      {% if id.ean %}<span>EAN {{ id.ean }}</span>{% endif %}
+    </div>
+    <p class="small">WaWi: {% if wsel %}<b>{{ wsel.artikel }}</b> · EK {{ eur(wsel.ek) }} <span class="muted">(Sicherheit {{ d.wawi_sure }})</span>{% else %}<span class="warn">kein passender Artikel im Lager gefunden</span>{% endif %}</p>
+    {% if id.unsicherheiten %}
+      <div class="warn-box"><b>Bitte prüfen:</b><ul class="tight">{% for u in id.unsicherheiten %}<li>{{ u }}</li>{% endfor %}</ul></div>
+    {% endif %}
+
+    <details {% if not wsel %}open{% endif %}>
+      <summary>✏️ Etwas falsch? Hier ändern</summary>
+      <div class="edit-grid">
+        <label class="wide">Name <input type="text" name="name" value="{{ id.name }}"></label>
+        <label class="wide">Plattform <input type="text" name="plattform" value="{{ id.plattform }}" list="plattformen"></label>
+        <datalist id="plattformen">{% for p in platforms %}<option value="{{ p }}">{% endfor %}</datalist>
+        <label>Edition <input type="text" name="edition" value="{{ id.edition }}" placeholder="–"></label>
+        <label>USK
+          <select name="usk">{% for u in ["", "0", "6", "12", "16", "18"] %}<option value="{{ u }}" {% if u == id.usk %}selected{% endif %}>{{ ("USK " ~ u) if u else "unbekannt" }}</option>{% endfor %}</select>
+        </label>
+        <label>Region
+          <select name="region">{% for r in ["PAL", "NTSC-U/C (US/Canada)", "NTSC-J (Japan)", "unbekannt"] %}<option {% if r == id.region %}selected{% endif %}>{{ r }}</option>{% endfor %}</select>
+        </label>
+        <label>Sprache <input type="text" name="sprache" value="{{ id.sprache }}" placeholder="–"></label>
+        <label>EAN <input type="text" name="ean" value="{{ id.ean }}" inputmode="numeric" placeholder="–"></label>
+        <label>Art
+          <select name="artikel_typ">{% for k, v in [("videospiel", "Videospiel"), ("konsole", "Konsole"), ("zubehoer", "Zubehör"), ("film_musik", "Film/Musik"), ("buch", "Buch"), ("sonstiges", "Sonstiges")] %}<option value="{{ k }}" {% if k == id.artikel_typ %}selected{% endif %}>{{ v }}</option>{% endfor %}</select>
+        </label>
+        <label class="wide">WaWi-Artikel
+          <select name="wawi_pnr">
+            <option value="">– nicht in der WaWi –</option>
+            {% for c in d.wawi_candidates %}<option value="{{ c.produktnr }}" {% if c.produktnr == d.wawi_pnr %}selected{% endif %}>{{ c.artikel }} · {{ c.zustand }} · EK {{ eur(c.ek) }}</option>{% endfor %}
+          </select>
+        </label>
+      </div>
+    </details>
+  </div>
+
+  <div class="card">
+    <h2>🗣️ Zustand</h2>
+    <label>Kurz beschreiben <span class="muted small">(Mikrofon der Tastatur zum Sprechen)</span>
+      <textarea name="notiz" rows="3" placeholder="z. B. komplett mit Anleitung, Disc leichte Kratzer, Hülle top">{{ h.note }}</textarea>
+    </label>
+  </div>
+
+  <div class="sticky-actions">
+    <button class="btn big" type="submit">✅ Stimmt – Angebot erstellen</button>
+    <div class="actions-row">
+      <button class="btn secondary small-btn" type="submit" onclick="document.getElementById('aktion').value='neu_erkennen'">Neu erkennen</button>
+      <button class="btn danger small-btn" type="submit" onclick="document.getElementById('aktion').value='verwerfen'">Verwerfen</button>
+    </div>
+  </div>
+</form>
+
 {% elif h.status == "fehler" %}
   <div class="card">
     <p class="error"><b>Das hat nicht geklappt:</b> {{ h.error }}</p>
     <form method="post" class="actions-row">
-      <button class="btn" name="aktion" value="neu">🔄 Nochmal analysieren</button>
+      <button class="btn" name="aktion" value="neu">🔄 Nochmal versuchen</button>
+      {% if d.ident %}<button class="btn secondary" name="aktion" value="zurueck">Erkennung/Zustand ändern</button>{% endif %}
       <button class="btn danger" name="aktion" value="verwerfen">Verwerfen</button>
     </form>
   </div>
@@ -61,8 +126,8 @@
     <p class="muted">{{ id.plattform or "Plattform ?" }} · {{ id.region }}{% if id.usk %} · USK {{ id.usk }}{% endif %}{% if id.ean %} · EAN {{ id.ean }}{% endif %}</p>
     <p class="small">Lieferumfang: Hülle {{ id.umfang.huelle }} · Anleitung {{ id.umfang.anleitung }} · Datenträger {{ id.umfang.datentraeger }}{% if id.umfang.sonstiges %} · {{ id.umfang.sonstiges }}{% endif %}</p>
     {% if id.zustand_details %}<ul class="small tight">{% for z in id.zustand_details %}<li>{{ z }}</li>{% endfor %}</ul>{% endif %}
-    {% if id.unsicherheiten %}
-      <div class="warn-box"><b>Bitte prüfen:</b><ul class="tight">{% for u in id.unsicherheiten %}<li>{{ u }}</li>{% endfor %}</ul></div>
+    {% if d.doubts %}
+      <div class="warn-box"><b>Bitte prüfen:</b><ul class="tight">{% for u in d.doubts %}<li>{{ u }}</li>{% endfor %}</ul></div>
     {% endif %}
   </div>
 
@@ -176,7 +241,7 @@
             {% if not d.tax_mode %}disabled{% endif %}>🚀 Für {{ eur(d.total) }} einstellen</button>
     <div class="actions-row">
       <button class="btn secondary small-btn" type="submit">Aktualisieren</button>
-      <button class="btn secondary small-btn" type="submit" formnovalidate onclick="document.getElementById('aktion').value='neu'">Neu analysieren</button>
+      <button class="btn secondary small-btn" type="submit" formnovalidate onclick="document.getElementById('aktion').value='zurueck'">Erkennung/Zustand ändern</button>
       <button class="btn danger small-btn" type="submit" onclick="document.getElementById('aktion').value='verwerfen'">Verwerfen</button>
     </div>
   </div>
