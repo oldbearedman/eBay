@@ -550,6 +550,7 @@ def handy_item(request: Request, hid: int, info: str = "", fehler: str = ""):
         "h": h, "d": h["data"], "info": info, "fehler": fehler,
         "storage": handy.storage_rows() if h["status"] == "bereit" else [],
         "platforms": handy.platforms() if h["status"] == "bestaetigen" else [],
+        "size_fit": handy.size_fit(h["data"].get("ident") or {}) if h["status"] == "bestaetigen" else None,
         "ebay_url": handy.item_url(h["item_id"]) if h["item_id"] else None,
     })
 

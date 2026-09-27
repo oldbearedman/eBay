@@ -149,6 +149,31 @@ def porto_rule(n: int, value: float, usk18: bool) -> tuple[float, str]:
     return settings.get("porto_paket"), ("Paket über „Alter“ KP" if usk18 else "DHL-Paket (kostenlos für den Käufer)")
 
 
+def _fits(size: dict, prefix: str) -> bool:
+    """Passt der Artikel (inkl. Verpackung) in diese Versandart? Drehen erlaubt."""
+    pad, g = settings.get("verpackung_cm"), settings.get("verpackung_g")
+    dims = sorted((float(size.get(k) or 0) + pad for k in ("l", "b", "h")), reverse=True)
+    limits = sorted((settings.get(f"{prefix}_max_{k}") for k in ("l", "b", "h")), reverse=True)
+    return all(d <= m + 1e-9 for d, m in zip(dims, limits)) and float(size.get("g") or 0) + g <= settings.get(f"{prefix}_max_g")
+
+
+def porto_for(n: int, value: float, usk18: bool, size: dict | None = None) -> tuple[float, str]:
+    """Wie porto_rule – aber passt der Artikel nicht in Brief/Kleinpaket, geht er eine Stufe größer.
+    size = {"l", "b", "h" (cm), "g" (Gramm)} des Artikels ohne Verpackung; None = Spiele-Regel pur."""
+    cost, kind = porto_rule(n, value, usk18)
+    if not size or not any(size.get(k) for k in ("l", "b", "h", "g")):
+        return cost, kind
+    brief = kind.startswith(("1 Spiel", "2 Spiele"))
+    if brief and _fits(size, "brief"):
+        return cost, "Großbrief" if kind == "1 Spiel" else kind.replace("1 Spiel", "1 Artikel")
+    if (brief or kind.startswith("Kleinpaket")) and _fits(size, "kp"):
+        return settings.get("porto_kp"), ("Kleinpaket über „Alter“ KP" if usk18 else
+                                          "Kleinpaket" + (" (zu groß für Großbrief)" if brief else ""))
+    if brief or kind.startswith("Kleinpaket"):
+        return settings.get("porto_paket"), ("Paket über „Alter“ KP" if usk18 else "DHL-Paket (zu groß für Kleinpaket)")
+    return cost, kind
+
+
 # ── WaWi lesen ──────────────────────────────────────────────────────────
 
 def init() -> None:

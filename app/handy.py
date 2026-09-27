@@ -37,8 +37,8 @@ MAX_PHOTOS = 12
 
 # Claudes Zustandsstufen → eBay-Zustandsname (je Kategorie wird der erlaubte Wert gesucht)
 CONDITION_ORDER = ["neu", "neuwertig", "sehr_gut", "gut", "akzeptabel", "defekt"]
-CONDITION_NAMES = {"neu": "neu", "neuwertig": "neuwertig", "sehr_gut": "sehr gut", "gut": "gut",
-                   "akzeptabel": "akzeptabel", "defekt": "defekt"}
+CONDITION_NAMES = {"neu": ["neu"], "neuwertig": ["neuwertig", "wie neu"], "sehr_gut": ["sehr gut"], "gut": ["gut"],
+                   "akzeptabel": ["akzeptabel"], "defekt": ["defekt"]}
 
 TAX_NOTE_25A = "Differenzbesteuert nach § 25a UStG – die Umsatzsteuer wird nicht gesondert ausgewiesen."
 AGE_NOTE = "USK ab 18: Versand mit Altersprüfung – Übergabe nur an Personen ab 18 Jahren."
@@ -189,9 +189,18 @@ def confirm(hid: int, form: dict) -> None:
     d = h["data"]
     i = d["ident"]
     old = (i["name"], i["plattform"])
-    for key in ("name", "plattform", "edition", "sprache", "ean"):
+    for key in ("name", "plattform", "edition", "sprache", "ean", "autor", "format"):
         if key in form:
             i[key] = str(form[key]).strip()
+    if "masse_l" in form:
+        def num(v):
+            try:
+                return round(float(str(v).replace(",", ".")), 1) if str(v).strip() else None
+            except ValueError:
+                return None
+        i["masse_cm"] = {"l": num(form.get("masse_l")), "b": num(form.get("masse_b")), "h": num(form.get("masse_h"))}
+        g = num(form.get("gewicht_g"))
+        i["gewicht_g"] = int(g) if g else None
     if form.get("usk") in ("", "0", "6", "12", "16", "18", "keine"):
         i["usk"] = form["usk"]
     if form.get("region") in ("PAL", "NTSC-U/C (US/Canada)", "NTSC-J (Japan)", "unbekannt"):
@@ -261,12 +270,13 @@ def _condition(level: str, allowed: list[dict]) -> dict:
         return {"id": "3000", "name": "Gebraucht"}
     by_name = {c["name"].lower(): c for c in allowed}
     for lvl in CONDITION_ORDER[CONDITION_ORDER.index(level):]:
-        name = CONDITION_NAMES[lvl]
-        if name in by_name:
-            return by_name[name]
-        hit = next((c for c in allowed if name in c["name"].lower() and not (name == "gut" and "sehr" in c["name"].lower())), None)
-        if hit:
-            return hit
+        for name in CONDITION_NAMES[lvl]:
+            if name in by_name:
+                return by_name[name]
+            hit = next((c for c in allowed if name in c["name"].lower()
+                        and not (name == "gut" and "sehr" in c["name"].lower())), None)
+            if hit:
+                return hit
     return next((c for c in allowed if c["name"].lower() == "gebraucht"), allowed[-1])
 
 
@@ -413,12 +423,34 @@ def _grid_down(v: float) -> float:
     return max(0.99, math.floor((v + 0.01) * 2) / 2 - 0.01)
 
 
-def shipping_for(article: float, usk18: bool) -> dict:
-    """Versand nach deiner Regel: Warenwert = Artikelpreis (1 Spiel ≤ 10 € Brief, … Ü18 immer „Alter“ KP)."""
-    own, kind = wawi.porto_rule(1, article, usk18)
-    prof = bundles.pick_profile(1, article, usk18) or {}
+def shipping_for(article: float, usk18: bool, size: dict | None = None) -> dict:
+    """Versand nach deiner Regel: Warenwert = Artikelpreis (1 Spiel ≤ 10 € Brief, … Ü18 immer „Alter“ KP);
+    mit size (alles außer Spielen) zusätzlich nach Maßen/Gewicht: Großbrief → Kleinpaket → Paket."""
+    own, kind = wawi.porto_for(1, article, usk18, size)
+    prof = bundles.pick_profile(1, article, usk18, kind=kind) or {}
     return {"own": own, "kind": kind, "profile": prof.get("id"), "profile_name": prof.get("name", "?"),
             "buyer": prof.get("buyer_cost", 0.0), "age_check": bool(prof.get("age_check"))}
+
+
+def item_size(ident: dict) -> dict | None:
+    """Maße/Gewicht für die Versandwahl – nur für Nicht-Spiele (Spiele: deine Stückzahl-Regeln)."""
+    if ident.get("artikel_typ") == "videospiel":
+        return None
+    m = ident.get("masse_cm") or {}
+    size = {"l": m.get("l"), "b": m.get("b"), "h": m.get("h"), "g": ident.get("gewicht_g")}
+    return size if any(size.values()) else None
+
+
+def size_fit(ident: dict) -> str | None:
+    """Welche Versandart passt von der Größe her? (Wertgrenzen kommen beim Preis dazu)"""
+    size = item_size(ident)
+    if not size or not all(size.get(k) for k in ("l", "b", "h")):
+        return None
+    if wawi._fits(size, "brief"):
+        return "passt in den Großbrief"
+    if wawi._fits(size, "kp"):
+        return "zu groß für Großbrief → Kleinpaket"
+    return "zu groß für Kleinpaket → DHL-Paket"
 
 
 def _profit(article: float, ship: dict, w: dict | None, tax: str | None) -> dict | None:
@@ -430,24 +462,24 @@ def _profit(article: float, ship: dict, w: dict | None, tax: str | None) -> dict
     return wawi.item_profit(article, w2, ship["own"])
 
 
-def _article_for_total(total: float, usk18: bool) -> float:
+def _article_for_total(total: float, usk18: bool, size: dict | None = None) -> float:
     """Höchster ,49/,99-Artikelpreis, bei dem Artikel + Käuferversand den Zielgesamtpreis nicht übersteigt."""
     a = _grid_down(total)
     while a > 0.99:
-        if a + shipping_for(a, usk18)["buyer"] <= total + 0.001:
+        if a + shipping_for(a, usk18, size)["buyer"] <= total + 0.001:
             return a
         a = round(a - 0.5, 2)
     return 0.99
 
 
-def _min_article(w: dict | None, usk18: bool, tax: str | None) -> float:
+def _min_article(w: dict | None, usk18: bool, tax: str | None, size: dict | None = None) -> float:
     """Kleinster ,49/,99-Preis mit mindestens dem Ziel-Gewinn je Artikel."""
     if not w:
         return 0.99
     target = settings.get("min_profit_per_item")
     a = 0.99
     while a < 2000:
-        if _profit(a, shipping_for(a, usk18), w, tax)["profit"] + 1e-6 >= target:
+        if _profit(a, shipping_for(a, usk18, size), w, tax)["profit"] + 1e-6 >= target:
             return a
         a = round(a + 0.5, 2)
     return a
@@ -479,7 +511,9 @@ def recalc(data: dict) -> None:
     data["no_usk"] = no_usk
     usk18 = ident["usk"] == "18" or no_usk or bool(wawi.USK18_RE.search(f"{data.get('title', '')} {(w or {}).get('artikel', '')}"))
     data["usk18"] = usk18
-    min_a = _min_article(w, usk18, tax)
+    size = item_size(ident)
+    data["size"] = size
+    min_a = _min_article(w, usk18, tax, size)
     data["min_article"] = min_a if w else None
 
     m = data["market"]
@@ -489,7 +523,7 @@ def recalc(data: dict) -> None:
                               ("bewaehrt", "Wie zuletzt verkauft", m.get("sold_avg"))):
         if not total:
             continue
-        a = _article_for_total(total, usk18)
+        a = _article_for_total(total, usk18, size)
         raised = w is not None and a < min_a
         a = max(a, min_a)
         if a in seen:
@@ -500,7 +534,7 @@ def recalc(data: dict) -> None:
         options.append({"key": "mindest", "label": "Mindestpreis (kein Marktvergleich)", "article": min_a if w else 9.99,
                         "raised": False, "ref_total": None})
     for o in options:
-        o["ship"] = shipping_for(o["article"], usk18)
+        o["ship"] = shipping_for(o["article"], usk18, size)
         o["total"] = round(o["article"] + o["ship"]["buyer"], 2)
         o["profit"] = _profit(o["article"], o["ship"], w, tax)
     data["options"] = options
@@ -514,12 +548,13 @@ def recalc(data: dict) -> None:
         opt = next((o for o in options if o["key"] == choice), None) or next(o for o in options if o["key"] == data["recommended"])
         choice, price = opt["key"], opt["article"]
     data["price_choice"], data["price"] = choice, price
-    ship = shipping_for(price, usk18)
+    ship = shipping_for(price, usk18, size)
     data["shipping"] = ship
     data["total"] = round(price + ship["buyer"], 2)
     data["profit"] = _profit(price, ship, w, tax)
     data["below_min"] = bool(w) and price < min_a
-    data["vat_percent"] = 19 if tax == "regel" else None
+    # Regelbesteuerung: Bücher 7 %, sonst 19 % (bei § 25a keine ausgewiesene MwSt.)
+    data["vat_percent"] = (7 if ident["artikel_typ"] == "buch" else 19) if tax == "regel" else None
 
     hints = []
     if tax == "25a":

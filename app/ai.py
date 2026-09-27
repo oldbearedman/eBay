@@ -130,7 +130,7 @@ def write_bundle_text(sources: list[dict], price: float, hint: str | None = None
 
 # ── Handy: Artikel auf Fotos erkennen, Einzelangebot schreiben ─────────
 
-IDENTIFY_SYSTEM = """Du hilfst einem gewerblichen eBay.de-Händler für gebrauchte Videospiele, Konsolen und Zubehör.
+IDENTIFY_SYSTEM = """Du hilfst einem gewerblichen eBay.de-Händler für gebrauchte Videospiele, Konsolen, Zubehör, Bücher u. a.
 Du bekommst Fotos EINES Artikels und seine Lagerliste (Warenwirtschaft). Der Händler bestätigt deine Erkennung
 gleich selbst – sei präzise und lass Felder leer, die du nicht sicher erkennst.
 
@@ -147,6 +147,11 @@ Aufgabe:
 2. Lagerliste: Welcher Eintrag ist genau dieser Artikel (gleiches Spiel, gleiche Plattform, passende Edition)?
    Gib dessen Produktnummer zurück, sonst "". Bei mehreren gleichen Einträgen nimm den ersten.
    Sicherheit: hoch = eindeutig; mittel = sehr wahrscheinlich; niedrig = geraten; keine = kein Eintrag passt.
+   Bücher: name = Buchtitel, autor, herausgeber = Verlag, format (Taschenbuch, Gebundene Ausgabe, Broschiert …),
+   ean = ISBN-13 vom Barcode; plattform leer, usk leer, fremdfassung false.
+   Maße und Gewicht des Artikels OHNE Verpackung schätzen (für die Versandwahl): aus bekannten Produktdaten
+   (Buchformat, Seitenzahl, Hardcover/Taschenbuch, Konsolen-/Zubehörmaße) bzw. vom Foto. Eher knapp großzügig
+   schätzen als zu klein. Bei Videospielen in Standardhülle genügt eine grobe Angabe.
 3. Unsicherheiten: nur zur ERKENNUNG (z. B. „Edition nicht erkennbar“, „zweites Spiel auf Foto 1“).
 4. Suchbegriff für die eBay-Suche nach Vergleichsangeboten: Spielname + Plattform-Kurzform, ohne Füllwörter."""
 
@@ -168,13 +173,20 @@ IDENTIFY_SCHEMA = {
         "genre": {"type": "string"},
         "herausgeber": {"type": "string"},
         "erscheinungsjahr": {"type": "string"},
+        "autor": {"type": "string", "description": "bei Büchern (sonst leer)"},
+        "format": {"type": "string", "description": "bei Büchern z. B. Taschenbuch, Gebundene Ausgabe (sonst leer)"},
+        "masse_cm": {"type": "object", "description": "geschätzte Maße ohne Verpackung in cm",
+                     "properties": {"l": {"type": "number"}, "b": {"type": "number"}, "h": {"type": "number"}},
+                     "required": ["l", "b", "h"], "additionalProperties": False},
+        "gewicht_g": {"type": "integer", "description": "geschätztes Gewicht ohne Verpackung in Gramm"},
         "wawi_produktnr": {"type": "string"},
         "wawi_sicherheit": {"type": "string", "enum": ["hoch", "mittel", "niedrig", "keine"]},
         "unsicherheiten": {"type": "array", "items": {"type": "string"}},
         "suchbegriff": {"type": "string"},
     },
     "required": ["erkannt", "artikel_typ", "name", "plattform", "edition", "region", "sprache", "ean", "usk",
-                 "fremdfassung", "genre", "herausgeber", "erscheinungsjahr", "wawi_produktnr", "wawi_sicherheit", "unsicherheiten",
+                 "fremdfassung", "genre", "herausgeber", "erscheinungsjahr", "autor", "format", "masse_cm", "gewicht_g",
+                 "wawi_produktnr", "wawi_sicherheit", "unsicherheiten",
                  "suchbegriff"],
     "additionalProperties": False,
 }

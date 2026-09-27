@@ -14,9 +14,24 @@ DEFAULTS = {
     "max_kp_artikel": 5,           # … höchstens so viele Artikel
     "porto_paket": 6.99,           # darüber: Paket (kostenlos für den Käufer, im Preis enthalten)
     "wawi_konvolut": 1,            # 1 = beim Einstellen eines Bündels in der WaWi als Konvolut zusammenfassen
+    # Maße/Gewicht (Bücher, Konsolen, Zubehör … – Spiele laufen weiter über die Stückzahl-Regeln oben)
+    "brief_max_l": 35.3, "brief_max_b": 25.0, "brief_max_h": 2.0, "brief_max_g": 500,
+    "kp_max_l": 35.3, "kp_max_b": 25.0, "kp_max_h": 8.0, "kp_max_g": 1000,
+    "verpackung_cm": 0.5,          # Zuschlag je Kante für Umschlag/Karton
+    "verpackung_g": 60,            # Gewicht der Verpackung
 }
 
 LABELS = {
+    "brief_max_l": ("Großbrief: max. Länge (cm)", "Maße/Gewicht gelten für alles außer Spielen (Bücher, Konsolen, Zubehör)."),
+    "brief_max_b": ("Großbrief: max. Breite (cm)", ""),
+    "brief_max_h": ("Großbrief: max. Höhe/Dicke (cm)", ""),
+    "brief_max_g": ("Großbrief: max. Gewicht (g)", ""),
+    "kp_max_l": ("Kleinpaket: max. Länge (cm)", "Bitte mit den aktuellen Bedingungen deines Kleinpakets abgleichen."),
+    "kp_max_b": ("Kleinpaket: max. Breite (cm)", ""),
+    "kp_max_h": ("Kleinpaket: max. Höhe (cm)", ""),
+    "kp_max_g": ("Kleinpaket: max. Gewicht (g)", ""),
+    "verpackung_cm": ("Verpackung: Zuschlag je Kante (cm)", "Umschlag/Karton kommt zu den Artikelmaßen dazu."),
+    "verpackung_g": ("Verpackung: Gewicht (g)", ""),
     "min_profit_per_item": ("Ziel-Gewinn je Artikel (€)", "Normalfall: So viel soll jeder Artikel im Bündel mindestens bringen."),
     "max_loss_per_bundle": ("Erlaubtes Minus je Bündel (€)", "Nur für Ladenhüter-Bündel: bis zu diesem Verlust darf abverkauft werden."),
     "slow_days": ("Ladenhüter ab … Tagen", "Artikel, die so lange online sind und höchstens 1 Beobachter haben."),

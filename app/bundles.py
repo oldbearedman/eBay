@@ -152,14 +152,15 @@ def _sku(details: list[dict]) -> str | None:
     return compact_sku([d["sku"] for d in details if d.get("sku")])
 
 
-def pick_profile(n: int, value: float, usk18: bool, current_id: str | None = None) -> dict | None:
+def pick_profile(n: int, value: float, usk18: bool, current_id: str | None = None, kind: str | None = None) -> dict | None:
     """Versandprofil nach deiner Regel (wawi.porto_rule):
     Ü18 → immer „Alter“ KP (Altersprüfung, für den Käufer kostenlos → Preis inkl. Versand);
     1 Spiel / 2 Spiele bis Wertgrenze → Brief; bis N Artikel & Wert Y → Kleinpaket; darüber → Paket kostenlos."""
     profs = ebay_account.shipping_profiles()
     fast = [p for p in profs if (p.get("handling_days") or 0) <= 3]
     cur = next((p for p in profs if p["id"] == current_id), None)
-    _, kind = wawi.porto_rule(n, value, usk18)
+    if kind is None:
+        _, kind = wawi.porto_rule(n, value, usk18)
     if usk18:
         age = sorted((p for p in fast if p["age_check"]), key=lambda p: p["buyer_cost"])
         if age:
@@ -168,7 +169,7 @@ def pick_profile(n: int, value: float, usk18: bool, current_id: str | None = Non
         free = [p for p in fast if p["buyer_cost"] == 0 and "paket" in p["service"].lower() and not p["age_check"]]
         if free:
             cur = free[0]
-    elif kind.startswith(("1 Spiel", "2 Spiele")):
+    elif kind.startswith(("1 Spiel", "2 Spiele", "Großbrief", "1 Artikel")):
         # Brief-Versand: bisheriges Profil behalten, falls es ein Brief ist, sonst ein Brief-Profil
         if not (cur and "brief" in cur["service"].lower()):
             brief = [p for p in fast if "brief" in p["service"].lower() and not p["age_check"]]

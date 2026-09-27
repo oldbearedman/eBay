@@ -45,6 +45,8 @@
       {% if id.sprache %}<span>{{ id.sprache }}</span>{% endif %}
       {% if id.ean %}<span>EAN {{ id.ean }}</span>{% endif %}
     </div>
+    {% if id.autor or id.format %}<p class="small" style="margin:0 0 4px">{% if id.autor %}von <b>{{ id.autor }}</b>{% endif %}{% if id.format %} · {{ id.format }}{% endif %}{% if id.herausgeber %} · {{ id.herausgeber }}{% endif %}</p>{% endif %}
+    {% if size_fit %}<p class="small" style="margin:0 0 4px">📦 ca. {{ id.masse_cm.l }} × {{ id.masse_cm.b }} × {{ id.masse_cm.h }} cm · {{ id.gewicht_g or "?" }} g → <b>{{ size_fit }}</b></p>{% endif %}
     <p class="small">WaWi: {% if wsel %}<b>{{ wsel.artikel }}</b> · EK {{ eur(wsel.ek) }} <span class="muted">(Sicherheit {{ d.wawi_sure }})</span>{% else %}<span class="warn">{{ d.wawi_note or "kein passender Artikel im Lager gefunden" }}</span>{% endif %}</p>
     {% if id.unsicherheiten %}
       <div class="warn-box"><b>Bitte prüfen:</b><ul class="tight">{% for u in id.unsicherheiten %}<li>{{ u }}</li>{% endfor %}</ul></div>
@@ -65,6 +67,17 @@
         </label>
         <label class="wide inline"><input type="checkbox" name="fremdfassung" {% if id.fremdfassung %}checked{% endif %}>
           PEGI-/Import-/NTSC-Fassung (auch mit USK auf der Disc) → immer „Alter“ KP</label>
+        {% if id.artikel_typ == "buch" %}
+        <label>Autor <input type="text" name="autor" value="{{ id.autor }}"></label>
+        <label>Format <input type="text" name="format" value="{{ id.format }}" placeholder="Taschenbuch …"></label>
+        {% endif %}
+        {% if id.artikel_typ != "videospiel" %}
+        <label class="wide small">Maße ohne Verpackung (cm) und Gewicht (g) – bestimmen die Versandart</label>
+        <label>Länge <input type="text" inputmode="decimal" name="masse_l" value="{{ (id.masse_cm or {}).l or '' }}"></label>
+        <label>Breite <input type="text" inputmode="decimal" name="masse_b" value="{{ (id.masse_cm or {}).b or '' }}"></label>
+        <label>Höhe/Dicke <input type="text" inputmode="decimal" name="masse_h" value="{{ (id.masse_cm or {}).h or '' }}"></label>
+        <label>Gewicht (g) <input type="text" inputmode="numeric" name="gewicht_g" value="{{ id.gewicht_g or '' }}"></label>
+        {% endif %}
         <label>Sprache <input type="text" name="sprache" value="{{ id.sprache }}" placeholder="–"></label>
         <label>EAN <input type="text" name="ean" value="{{ id.ean }}" inputmode="numeric" placeholder="–"></label>
         <label>Art
