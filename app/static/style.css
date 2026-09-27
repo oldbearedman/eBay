@@ -449,3 +449,10 @@ h3.form-section { font-size: 15px; margin: 8px 0 10px; padding-top: 10px; border
 .li-main { flex: 1; min-width: 0; font-size: 14px; }
 .li-side { text-align: right; font-size: 13px; white-space: nowrap; }
 .accent { color: var(--accent); }
+
+/* ── Relist ─────────────────────────────────────────────────────── */
+.relist-old { display: flex; gap: 12px; align-items: flex-start; }
+.relist-old img { width: 72px; height: 72px; object-fit: cover; border-radius: 10px; flex: none; }
+.relist-old p { margin: 0 0 4px; }
+.relist-card { border-color: var(--error); background: var(--error-soft); }
+.inline-form { display: inline; margin-left: 4px; }

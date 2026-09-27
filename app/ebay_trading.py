@@ -169,7 +169,8 @@ def build_item_xml(d: dict) -> str:
         parts.append(f"<Location>{escape(d['location'])}</Location>")
     if d.get("postal_code"):
         parts.append(f"<PostalCode>{escape(d['postal_code'])}</PostalCode>")
-    parts.append("<ListingDuration>GTC</ListingDuration><ListingType>FixedPriceItem</ListingType><Quantity>1</Quantity>")
+    parts.append("<ListingDuration>GTC</ListingDuration><ListingType>FixedPriceItem</ListingType>"
+                 f"<Quantity>{max(1, int(d.get('quantity') or 1))}</Quantity>")
     if d.get("sku"):
         parts.append(f"<SKU>{escape(d['sku'])}</SKU>")
     parts.append(f"<PictureDetails>{pics}</PictureDetails>")

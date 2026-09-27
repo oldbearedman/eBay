@@ -69,6 +69,15 @@
 </form>
 {% endif %}
 
+<div class="card suggest {% if m.verdict == 'teuer' %}relist-card{% endif %}">
+  <div>
+    <strong>🔄 Neu einstellen (Relist)</strong>
+    <span class="muted small">– neues Angebot mit frischem Text von Claude und Marktpreis, das alte wird beendet. Neue Angebote bekommen bei eBay oft wieder mehr Sichtbarkeit.{% if l.watch_count %} Achtung: {{ l.watch_count }} Beobachter gehen dabei verloren.{% endif %}</span>
+  </div>
+  {% if relist %}<a class="btn" href="/relist/{{ relist.id }}">Offenen Entwurf ansehen</a>
+  {% else %}<form method="post" action="/markt/{{ l.item_id }}/relist"><button class="btn {{ '' if m.verdict == 'teuer' else 'secondary' }}">🔄 Relist vorbereiten</button></form>{% endif %}
+</div>
+
 <div class="card">
   <div class="bundle-head">
     <h2>Günstigste vergleichbare Angebote <span class="muted small">(gleiche Vollständigkeit & ähnlicher Zustand)</span></h2>

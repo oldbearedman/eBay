@@ -356,7 +356,8 @@ Regeln:
   Erfinde nichts dazu – keine Zustände, kein Zubehör, keine Spielinhalte, die nicht in den Daten stehen.
   Was „unklar“ ist oder unter „UNSICHERE Punkte“ steht, wird nicht als Tatsache genannt (z. B. keine
   Sprachangabe wie „deutsch“, wenn die Sprache unsicher ist).
-- Titel: höchstens 80 Zeichen, Deutsch. Spielname und Plattform nach vorne, dann wichtige Suchbegriffe
+- Titel: HÖCHSTENS 80 Zeichen (Leerzeichen zählen mit – lieber einen Suchbegriff weglassen, als dass der Titel
+  abgeschnitten wird), Deutsch. Spielname und Plattform nach vorne, dann wichtige Suchbegriffe
   (z. B. PAL, deutsch, OVP/komplett mit Anleitung, Edition). Keine Großbuchstaben-Wörter nur zur Betonung,
   keine Sonderzeichen-Spielereien, keine Zustandswörter wie „TOP“.
   NIEMALS im Titel: PEGI, Import, NTSC, US-/UK-/EU-Version, ESRB, Mature o. Ä. – auch wenn es so im Steckbrief

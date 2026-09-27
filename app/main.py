@@ -11,7 +11,7 @@ from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, Redirect
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 
-from . import advisor, ai, ankauf, bundles, handy, meta, review, config, db, ebay_account, ebay_auth, ebay_orders, ebay_trading, market, promotions, settings, sync, traffic, wawi
+from . import advisor, ai, ankauf, bundles, handy, relist, meta, review, config, db, ebay_account, ebay_auth, ebay_orders, ebay_trading, market, promotions, settings, sync, traffic, wawi
 
 log = logging.getLogger("ebay-manager")
 templates = Jinja2Templates(directory=config.BASE_DIR / "app" / "templates")
@@ -51,6 +51,7 @@ async def lifespan(app: FastAPI):
     review.init()
     handy.init()
     ankauf.init()
+    relist.init()
     task = asyncio.create_task(_auto_sync())
     yield
     task.cancel()
@@ -268,7 +269,7 @@ def market_detail(request: Request, item_id: str, info: str = "", fehler: str = 
                                            w["tax"], w["cost"])
     return templates.TemplateResponse(request, "market.html", {
         "l": dict(listing), "m": m, "w": w, "calc": calc, "info": info, "fehler": fehler,
-        "dg": traffic.diagnose_all().get(item_id),
+        "dg": traffic.diagnose_all().get(item_id), "relist": relist.open_for(item_id),
     })
 
 
@@ -687,4 +688,49 @@ async def ankauf_action(request: Request, aid: int):
         return _back(url, info="Aktualisiert.")
     except Exception as exc:
         log.exception("Ankauf-Aktion %s fehlgeschlagen", action)
+        return _back(url, fehler=str(exc))
+
+
+# ── Relist: zu teures Angebot neu einstellen ────────────────────────────
+
+@app.post("/markt/{item_id}/relist")
+def relist_create(item_id: str):
+    rid = relist.create(item_id)
+    return RedirectResponse(f"/relist/{rid}", status_code=303)
+
+
+@app.get("/relist/{rid}", response_class=HTMLResponse)
+def relist_page(request: Request, rid: int, info: str = "", fehler: str = ""):
+    r = relist.get(rid)
+    if not r:
+        raise HTTPException(404)
+    return templates.TemplateResponse(request, "relist.html", {"r": r, "d": r["data"], "info": info, "fehler": fehler})
+
+
+@app.get("/relist/{rid}/status")
+def relist_status(rid: int):
+    r = relist.get(rid)
+    if not r:
+        raise HTTPException(404)
+    return {"status": r["status"], "step": r["step"]}
+
+
+@app.post("/relist/{rid}")
+async def relist_action(request: Request, rid: int):
+    form = dict(await request.form())
+    action = form.get("aktion")
+    url = f"/relist/{rid}"
+    try:
+        if action == "verwerfen":
+            relist.discard(rid)
+            r = relist.get(rid)
+            return _back(f"/markt/{r['old_item_id']}", info="Relist verworfen – das Angebot bleibt unverändert.")
+        await asyncio.to_thread(relist.update, rid, form)
+        if action == "einstellen":
+            res = await asyncio.to_thread(relist.publish, rid, form.get("trotzdem") == "on")
+            return _back(url, info=f"Neu eingestellt als #{res['item_id']}, altes Angebot beendet.",
+                         fehler=" · ".join(res["problems"]))
+        return _back(url, info="Aktualisiert.")
+    except Exception as exc:
+        log.exception("Relist-Aktion %s fehlgeschlagen", action)
         return _back(url, fehler=str(exc))

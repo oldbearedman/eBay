@@ -462,24 +462,24 @@ def _profit(article: float, ship: dict, w: dict | None, tax: str | None) -> dict
     return wawi.item_profit(article, w2, ship["own"])
 
 
-def _article_for_total(total: float, usk18: bool, size: dict | None = None) -> float:
+def _article_for_total(total: float, ship_fn) -> float:
     """Höchster ,49/,99-Artikelpreis, bei dem Artikel + Käuferversand den Zielgesamtpreis nicht übersteigt."""
     a = _grid_down(total)
     while a > 0.99:
-        if a + shipping_for(a, usk18, size)["buyer"] <= total + 0.001:
+        if a + ship_fn(a)["buyer"] <= total + 0.001:
             return a
         a = round(a - 0.5, 2)
     return 0.99
 
 
-def _min_article(w: dict | None, usk18: bool, tax: str | None, size: dict | None = None) -> float:
+def _min_article(w: dict | None, tax: str | None, ship_fn) -> float:
     """Kleinster ,49/,99-Preis mit mindestens dem Ziel-Gewinn je Artikel."""
     if not w:
         return 0.99
     target = settings.get("min_profit_per_item")
     a = 0.99
     while a < 2000:
-        if _profit(a, shipping_for(a, usk18, size), w, tax)["profit"] + 1e-6 >= target:
+        if _profit(a, ship_fn(a), w, tax)["profit"] + 1e-6 >= target:
             return a
         a = round(a + 0.5, 2)
     return a
@@ -506,14 +506,19 @@ def recalc(data: dict) -> None:
     # Ü18-Versand: USK 18 – und auch Ware OHNE USK-Kennzeichen (Import, nur PEGI/ESRB), § 12 Abs. 3 JuSchG
     # Hausregel: PEGI-/Import-/NTSC-Fassungen und Spiele ohne USK gehen IMMER über „Alter“ KP –
     # auch wenn auf der Disc ein USK-Logo steht
-    no_usk = ident["artikel_typ"] == "videospiel" and (
-        ident.get("fremdfassung") or ident["usk"] in ("", "keine") or ident["region"].startswith("NTSC"))
+    if "usk18_fixed" in data:   # Relist: Einstufung des bisherigen Angebots (USK-Merkmal, Titel, „Alter“-Profil)
+        no_usk, usk18 = False, bool(data["usk18_fixed"])
+    else:
+        no_usk = ident["artikel_typ"] == "videospiel" and (
+            ident.get("fremdfassung") or ident["usk"] in ("", "keine") or ident["region"].startswith("NTSC"))
+        usk18 = ident["usk"] == "18" or no_usk or bool(wawi.USK18_RE.search(f"{data.get('title', '')} {(w or {}).get('artikel', '')}"))
     data["no_usk"] = no_usk
-    usk18 = ident["usk"] == "18" or no_usk or bool(wawi.USK18_RE.search(f"{data.get('title', '')} {(w or {}).get('artikel', '')}"))
     data["usk18"] = usk18
     size = item_size(ident)
     data["size"] = size
-    min_a = _min_article(w, usk18, tax, size)
+    fixed = data.get("fixed_profile")   # Relist von Nicht-Spielen: Maße unbekannt → bisheriges Versandprofil
+    ship_fn = (lambda a: dict(fixed)) if fixed else (lambda a: shipping_for(a, usk18, size))
+    min_a = _min_article(w, tax, ship_fn)
     data["min_article"] = min_a if w else None
 
     m = data["market"]
@@ -523,7 +528,7 @@ def recalc(data: dict) -> None:
                               ("bewaehrt", "Wie zuletzt verkauft", m.get("sold_avg"))):
         if not total:
             continue
-        a = _article_for_total(total, usk18, size)
+        a = _article_for_total(total, ship_fn)
         raised = w is not None and a < min_a
         a = max(a, min_a)
         if a in seen:
@@ -534,7 +539,7 @@ def recalc(data: dict) -> None:
         options.append({"key": "mindest", "label": "Mindestpreis (kein Marktvergleich)", "article": min_a if w else 9.99,
                         "raised": False, "ref_total": None})
     for o in options:
-        o["ship"] = shipping_for(o["article"], usk18, size)
+        o["ship"] = ship_fn(o["article"])
         o["total"] = round(o["article"] + o["ship"]["buyer"], 2)
         o["profit"] = _profit(o["article"], o["ship"], w, tax)
     data["options"] = options
@@ -548,7 +553,7 @@ def recalc(data: dict) -> None:
         opt = next((o for o in options if o["key"] == choice), None) or next(o for o in options if o["key"] == data["recommended"])
         choice, price = opt["key"], opt["article"]
     data["price_choice"], data["price"] = choice, price
-    ship = shipping_for(price, usk18, size)
+    ship = ship_fn(price)
     data["shipping"] = ship
     data["total"] = round(price + ship["buyer"], 2)
     data["profit"] = _profit(price, ship, w, tax)
@@ -560,7 +565,7 @@ def recalc(data: dict) -> None:
     if tax == "25a":
         hints.append(TAX_NOTE_25A)
     if usk18:
-        hints.append(AGE_NOTE if ident["usk"] == "18" else NO_USK_NOTE if ident["usk"] in ("", "keine") else AGE_SHIP_NOTE)
+        hints.append(AGE_NOTE if ident["usk"] == "18" else NO_USK_NOTE if ident["usk"] == "keine" else AGE_SHIP_NOTE)
     data["hints"] = hints
     data["description"] = data["body"] + ("<h3>Hinweise</h3><ul>" + "".join(f"<li>{h}</li>" for h in hints) + "</ul>" if hints else "")
 
@@ -570,7 +575,8 @@ def listing_data(data: dict) -> dict:
         "title": data["title"], "description": data["description"], "category_id": data["category_id"],
         "price": data["price"], "condition_id": data["condition_id"], "country": data.get("country") or "DE",
         "location": data.get("location"), "postal_code": data.get("postal_code"),
-        "sku": data.get("wawi_pnr") or None, "pictures": data["pictures"], "specifics": data["specifics"],
+        "sku": data.get("wawi_pnr") or data.get("sku") or None, "pictures": data["pictures"], "specifics": data["specifics"],
+        "quantity": data.get("quantity") or 1,
         "shipping_profile": data["shipping"]["profile"], "return_profile": data["return_profile"],
         "payment_profile": data["payment_profile"], "ean": data.get("ean"), "vat_percent": data.get("vat_percent"),
     }

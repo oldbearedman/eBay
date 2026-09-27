@@ -1,0 +1,137 @@
+{% extends "base.html" %}
+{% block title %}Relist · eBay Manager{% endblock %}
+{% macro eur(v) %}{% if v is none %}–{% else %}{{ "%.2f"|format(v)|replace(".", ",") }} €{% endif %}{% endmacro %}
+{% block content %}
+<div class="narrow handy">
+<p><a href="/markt/{{ r.old_item_id }}">← Marktwert-Check</a></p>
+{% if info %}<p class="banner ok">{{ info }}</p>{% endif %}
+{% if fehler %}<p class="banner error">{{ fehler }}</p>{% endif %}
+<h1>🔄 Neu einstellen</h1>
+
+{% if r.status in ("vorbereiten", "einstellen") %}
+  <div class="card center">
+    <div class="spinner"></div>
+    <p id="step"><b>{{ r.step or "Bitte warten …" }}</b></p>
+    <p class="muted small">Dauert meist 20–40 Sekunden. Die Seite aktualisiert sich selbst.</p>
+  </div>
+  <script>
+    (async function poll() {
+      try {
+        const x = await fetch('/relist/{{ r.id }}/status'); const j = await x.json();
+        if (j.status !== '{{ r.status }}') return location.reload();
+        if (j.step) document.getElementById('step').innerHTML = '<b>' + j.step + '</b>';
+      } catch (e) {}
+      setTimeout(poll, 2500);
+    })();
+  </script>
+
+{% elif r.status == "fehler" %}
+  <div class="card"><p class="error"><b>Das hat nicht geklappt:</b> {{ r.error }}</p>
+    <form method="post" action="/markt/{{ r.old_item_id }}/relist"><button class="btn">🔄 Nochmal versuchen</button></form></div>
+
+{% elif r.status == "verworfen" %}
+  <div class="card"><p>Verworfen – das Angebot ist unverändert online.</p></div>
+
+{% elif r.status == "online" %}
+  <div class="card center">
+    <p class="big-ok">✅ Neu online</p>
+    <p><b>{{ d.title }}</b></p>
+    <p>{{ eur(d.total) }} inkl. Versand <span class="muted">(vorher {{ eur(d.old.total) }})</span></p>
+    {% if d.profit %}<p class="muted">Gewinn: <b>{{ eur(d.profit.profit) }}</b></p>{% endif %}
+    {% for p in d.problems or [] %}<p class="error small">{{ p }}</p>{% endfor %}
+    <p class="small muted">Altes Angebot #{{ r.old_item_id }} beendet · neues #{{ r.new_item_id }}</p>
+    <p><a class="btn" href="https://www.ebay.de/itm/{{ r.new_item_id }}" target="_blank">Bei eBay ansehen</a></p>
+    <p><a class="btn secondary" href="/">Zur Übersicht</a></p>
+  </div>
+
+{% else %}
+<form method="post" class="handy-form" id="f">
+  <input type="hidden" name="aktion" value="aktualisieren" id="aktion">
+
+  <div class="card">
+    <h2>Bisher</h2>
+    <div class="relist-old">
+      {% if d.old.image %}<img src="{{ d.old.image }}" alt="">{% endif %}
+      <div>
+        <p class="t"><a href="{{ d.old.url }}" target="_blank">{{ d.old.title }}</a></p>
+        <p class="small">{{ eur(d.old.price) }} + {{ eur(d.old.shipping) }} Versand = <b>{{ eur(d.old.total) }}</b>
+          {% if d.old.diff_pct is not none %}<span class="mk mk-teuer">{{ "%+d"|format(d.old.diff_pct) }} %</span>{% endif %}</p>
+        <p class="small muted">online seit {{ d.old.start[:10] }} · {{ d.old.watchers }} Beobachter</p>
+      </div>
+    </div>
+    {% if d.old.watchers %}<p class="warn-box small">⚠️ {{ d.old.watchers }} Beobachter gehen beim Neu-Einstellen verloren. Alternative: nur den Preis senken (Marktwert-Seite) – dann bekommen die Beobachter eine Preissenkungs-Info.</p>{% endif %}
+  </div>
+
+  <div class="card">
+    <h2>💶 Neuer Preis</h2>
+    <p class="muted small">
+      {% if d.market.found %}{{ d.market.found }} vergleichbare Angebote: günstiges Drittel {{ eur(d.market.quick) }}, Mitte {{ eur(d.market.median) }} (inkl. Versand).{% else %}Keine vergleichbaren Angebote.{% endif %}
+      {% if d.market.own_sales %}Du hast ihn {{ d.market.own_sales|length }}× verkauft, Ø {{ eur(d.market.sold_avg) }}.{% endif %}
+      <a href="{{ d.market.sold_url }}" target="_blank">Verkaufte ansehen</a>
+    </p>
+    {% for o in d.options %}
+    <label class="opt {% if d.price_choice == o.key %}sel{% endif %}">
+      <input type="radio" name="price_choice" value="{{ o.key }}" {% if d.price_choice == o.key %}checked{% endif %} data-auto>
+      <span class="opt-main"><b>{{ o.label }}{% if o.key == d.recommended %} <span class="pill-rec">Empfehlung</span>{% endif %}</b>
+        <span class="small muted">{{ eur(o.article) }} + {{ eur(o.ship.buyer) }} Versand · {{ o.ship.kind }}</span>
+        {% if o.raised %}<span class="small warn">auf deinen Mindestpreis angehoben (Markt: {{ eur(o.ref_total) }})</span>{% endif %}</span>
+      <span class="opt-side"><b>{{ eur(o.total) }}</b>
+        {% if o.profit %}<span class="small {{ 'ok' if o.profit.profit >= 1 else ('warn' if o.profit.profit >= 0 else 'error') }}">Gewinn {{ eur(o.profit.profit) }}</span>{% endif %}</span>
+    </label>
+    {% endfor %}
+    <label class="opt {% if d.price_choice == 'eigen' %}sel{% endif %}">
+      <input type="radio" name="price_choice" value="eigen" {% if d.price_choice == 'eigen' %}checked{% endif %}>
+      <span class="opt-main"><b>Eigener Artikelpreis</b>
+        <input type="text" inputmode="decimal" name="custom_price" class="price-in" placeholder="z. B. 12,99"
+               value="{{ ('%.2f'|format(d.custom_price))|replace('.', ',') if d.custom_price else '' }}"></span>
+    </label>
+    <div class="margin-box">
+      <div class="mrow total"><span>Käufer zahlt</span><span>{{ eur(d.total) }} <span class="muted small">(vorher {{ eur(d.old.total) }})</span></span></div>
+      <div class="mrow small"><span>Artikel {{ eur(d.price) }} + Versand {{ eur(d.shipping.buyer) }}</span><span>{{ d.shipping.profile_name }}</span></div>
+      {% if d.profit %}
+        <div class="mrow total"><span>Gewinn</span><span class="{{ 'ok' if d.profit.profit >= 1 else ('warn' if d.profit.profit >= 0 else 'error') }}">{{ eur(d.profit.profit) }}</span></div>
+        <p class="small muted">EK {{ eur(d.wawi.ek) }} · Porto {{ eur(d.shipping.own) }} · Gebühren ~{{ eur(d.profit.fee) }} · USt {{ eur(d.profit.tax) }} · Mindestpreis {{ eur(d.min_article) }}</p>
+      {% else %}<p class="small warn">Nicht in der WaWi zugeordnet – Gewinn unbekannt.</p>{% endif %}
+    </div>
+    <label>Steuer
+      <select name="tax" data-auto>
+        <option value="">{% if d.wawi and d.wawi.tax_label %}aus der WaWi: {{ d.wawi.tax_label }}{% else %}– bitte wählen –{% endif %}</option>
+        <option value="25a" {% if d.tax_override == "25a" %}selected{% endif %}>Differenzbesteuerung § 25a</option>
+        <option value="regel" {% if d.tax_override == "regel" %}selected{% endif %}>Regelbesteuerung</option>
+      </select>
+    </label>
+  </div>
+
+  <div class="card">
+    <h2>📝 Neuer Text</h2>
+    <label>Titel <span class="small muted" id="tc"></span><input type="text" name="title" id="title" maxlength="80" value="{{ d.title }}"></label>
+    <label>Zustand <select name="condition_id" data-auto>{% for c in d.conditions %}<option value="{{ c.id }}" {% if c.id == d.condition_id %}selected{% endif %}>{{ c.name }}</option>{% endfor %}</select></label>
+    <details><summary>Beschreibung ansehen</summary>
+      <div class="desc-preview">{{ d.description|safe }}</div>
+      <label class="small">Text bearbeiten (HTML, ohne die Hinweise am Ende)<textarea name="body" rows="10">{{ d.body }}</textarea></label>
+    </details>
+    <p class="small muted">Fotos, Merkmale, Kategorie, SKU{% if d.quantity > 1 %}, Menge {{ d.quantity }}{% endif %} werden übernommen.</p>
+    {% if d.verify.ok %}<p class="small ok">✔ eBay hat das neue Angebot geprüft{% if d.verify.fee_sum %} – Einstellgebühren {{ eur(d.verify.fee_sum) }}{% endif %}.</p>
+    {% else %}<p class="small error">eBay-Prüfung: {{ d.verify.error }}</p>{% endif %}
+  </div>
+
+  <div class="sticky-actions">
+    {% if d.below_min %}<label class="small inline"><input type="checkbox" name="trotzdem"> Trotzdem unter Mindestpreis</label>{% endif %}
+    <button class="btn big" type="submit" onclick="document.getElementById('aktion').value='einstellen'" {% if not d.tax_mode %}disabled{% endif %}>🔄 Für {{ eur(d.total) }} neu einstellen & altes beenden</button>
+    <div class="actions-row">
+      <button class="btn secondary small-btn" type="submit">Aktualisieren</button>
+      <button class="btn danger small-btn" type="submit" onclick="document.getElementById('aktion').value='verwerfen'">Verwerfen</button>
+    </div>
+  </div>
+</form>
+<script>
+  (() => {
+    const f = document.getElementById('f'), t = document.getElementById('title'), tc = document.getElementById('tc');
+    const count = () => tc.textContent = `${t.value.length}/80`; t.oninput = count; count();
+    f.querySelectorAll('[data-auto]').forEach(el => el.addEventListener('change', () => f.requestSubmit()));
+    f.addEventListener('submit', () => f.querySelectorAll('button').forEach(b => setTimeout(() => b.disabled = true)));
+  })();
+</script>
+{% endif %}
+</div>
+{% endblock %}

@@ -65,7 +65,8 @@
       <td class="r nowrap {% if l.days is not none and l.days > 60 %}warn{% endif %}">{% if l.days is not none %}{{ l.days }}&nbsp;Tage{% endif %}</td>
       <td class="market nowrap">
         {% if l.listing_type == "FixedPriceItem" %}
-          {% if l.m %}<a class="mk mk-{{ l.m.verdict }}" href="/markt/{{ l.item_id }}" title="{{ l.m.label }}">{% if l.m.diff_pct is not none %}{{ "%+d"|format(l.m.diff_pct) }}&nbsp;%{% else %}–{% endif %}{% if l.m.rough %}<sup>~</sup>{% endif %}</a>{% endif %}
+          {% if l.m %}<a class="mk mk-{{ l.m.verdict }}" href="/markt/{{ l.item_id }}" title="{{ l.m.label }}">{% if l.m.diff_pct is not none %}{{ "%+d"|format(l.m.diff_pct) }}&nbsp;%{% else %}–{% endif %}{% if l.m.rough %}<sup>~</sup>{% endif %}</a>{% if l.m.verdict == 'teuer' %}
+            <form method="post" action="/markt/{{ l.item_id }}/relist" class="inline-form"><button class="icon-btn" title="Neu einstellen: neuer Text, Marktpreis, altes Angebot beenden">🔄 Relist</button></form>{% endif %}{% endif %}
           <button type="button" class="icon-btn" data-check="{{ l.item_id }}" title="Marktpreis prüfen">{% if l.m %}↻{% else %}Prüfen{% endif %}</button>
         {% endif %}
       </td>
