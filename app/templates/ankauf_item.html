@@ -1,0 +1,155 @@
+{% extends "base.html" %}
+{% block title %}Ankauf · eBay Manager{% endblock %}
+{% macro eur(v) %}{% if v is none %}–{% else %}{{ "%.2f"|format(v)|replace(".", ",") }} €{% endif %}{% endmacro %}
+{% block content %}
+<div class="narrow handy">
+<p><a href="/ankauf">← Ankäufe</a></p>
+{% if info %}<p class="banner ok">{{ info }}</p>{% endif %}
+{% if fehler %}<p class="banner error">{{ fehler }}</p>{% endif %}
+
+<div class="photo-strip">
+  {% for n in range(1, a.photos + 1) %}<a href="/ankauf/{{ a.id }}/foto/{{ n }}.jpg" target="_blank"><img src="/ankauf/{{ a.id }}/foto/{{ n }}.jpg" alt=""></a>{% endfor %}
+</div>
+{% if k.ebay_titel %}<p class="muted small">eBay-Kauf: {{ k.ebay_titel }} ({{ k.ebay_artikelnr }})</p>{% endif %}
+
+{% if a.status in ("erkennen", "bewerten", "anlegen") %}
+  <div class="card center">
+    <div class="spinner"></div>
+    <p id="step"><b>{{ a.step or "Bitte warten …" }}</b></p>
+    <p class="muted small">{% if a.status == "erkennen" %}Claude zählt und erkennt alle Artikel – bei großen Konvoluten 1–3 Minuten.{% else %}Die Marktwerte werden je Titel ermittelt.{% endif %} Die Seite aktualisiert sich selbst.</p>
+  </div>
+  <script>
+    (async function poll() {
+      try {
+        const r = await fetch('/ankauf/{{ a.id }}/status'); const j = await r.json();
+        if (j.status !== '{{ a.status }}') return location.reload();
+        if (j.step) document.getElementById('step').innerHTML = '<b>' + j.step + '</b>';
+      } catch (e) {}
+      setTimeout(poll, 3000);
+    })();
+  </script>
+
+{% elif a.status == "fehler" %}
+  <div class="card">
+    <p class="error"><b>Das hat nicht geklappt:</b> {{ a.error }}</p>
+    <form method="post" class="actions-row">
+      <button class="btn" name="aktion" value="neu">🔄 Nochmal erkennen</button>
+      <button class="btn danger" name="aktion" value="verwerfen">Verwerfen</button>
+    </form>
+  </div>
+
+{% elif a.status == "angelegt" %}
+  <div class="card center">
+    <p class="big-ok">✅ {{ a.belegnr }}</p>
+    <p>{{ d.angelegt|length }} Artikel in der WaWi angelegt · Summe {{ eur(d.summe.gesamt) }}</p>
+    <p><a class="btn" href="/ankauf/{{ a.id }}/beleg.pdf" target="_blank">📄 Ankaufbeleg (PDF)</a></p>
+    <p><a class="btn secondary" href="/handy">📱 Jetzt Artikel einstellen</a></p>
+  </div>
+  <div class="card">
+    <h2>Angelegte Artikel</h2>
+    <ul class="small tight">
+      {% for r in d.angelegt %}<li><b>{{ r.artikel }}</b> · EK {{ r.ek }} · Mindest-VK {{ r.min_vk or "–" }} <span class="muted">({{ r.produktnr }})</span></li>{% endfor %}
+    </ul>
+  </div>
+
+{% else %}
+<form method="post" class="handy-form" id="f">
+  <input type="hidden" name="aktion" value="aktualisieren" id="aktion">
+  <input type="hidden" name="n" value="{{ d['items']|length }}">
+
+  <div class="card">
+    <h2>📦 {{ d.summe.artikel }} Artikel erkannt <span class="muted small">({{ d['items']|length }} Titel)</span></h2>
+    {% if d.doubts %}
+      <div class="warn-box"><b>Bitte prüfen:</b><ul class="tight">{% for u in d.doubts %}<li>{{ u }}</li>{% endfor %}</ul></div>
+    {% endif %}
+    <p class="muted small">Antippen zum Ändern. Wert = Vergleichswert je Stück (Grundlage der Aufteilung) – änderbar.</p>
+    {% for it in d['items'] %}{% set i = loop.index0 %}
+    <details class="lot-item {% if it.wert_manuell is none and it.quelle and (it.quelle == 'geschätzt' or 'prüfen' in it.quelle) %}est{% endif %}">
+      <summary>
+        <span class="li-main"><b>{% if it.anzahl > 1 %}{{ it.anzahl }}× {% endif %}{{ it.name }}</b> <span class="muted">{{ it.plattform }} · {{ it.umfang }}</span>{% if it.fremdfassung %} <span class="warn">PEGI/Import</span>{% endif %}{% if it.hinweis %}<br><span class="small muted">{{ it.hinweis }}</span>{% endif %}</span>
+        <span class="li-side">EK <b>{{ eur(it.ek_je[0] if it.ek_je else none) }}</b><br><span class="muted">Wert {{ eur(it.wert_manuell if it.wert_manuell is not none else it.wert) }}</span></span>
+      </summary>
+      <div class="edit-grid">
+        <label class="wide">Name <input type="text" name="name_{{ i }}" value="{{ it.name }}"></label>
+        <label>Plattform <input type="text" name="plattform_{{ i }}" value="{{ it.plattform }}"></label>
+        <label>Anzahl <input type="number" min="1" name="anzahl_{{ i }}" value="{{ it.anzahl }}"></label>
+        <label>Umfang <select name="umfang_{{ i }}">{% for u in UMFANG %}<option {% if u == it.umfang %}selected{% endif %}>{{ u }}</option>{% endfor %}</select></label>
+        <label>Zustand <select name="zustand_{{ i }}">{% for z in ZUSTAND %}<option {% if z == it.zustand %}selected{% endif %}>{{ z }}</option>{% endfor %}</select></label>
+        <label>Art <select name="art_{{ i }}">{% for key, lbl in ART.items() %}<option value="{{ key }}" {% if key == it.art %}selected{% endif %}>{{ lbl }}</option>{% endfor %}</select></label>
+        <label>Wert je Stück (€) <input type="text" inputmode="decimal" name="wert_{{ i }}" value="{{ ('%.2f'|format(it.wert_manuell if it.wert_manuell is not none else it.wert))|replace('.', ',') if (it.wert_manuell is not none or it.wert is not none) else '' }}"></label>
+        <p class="wide small muted" style="margin:0 0 10px">Quelle: {{ "manuell" if it.wert_manuell is not none else (it.quelle or "–") }}{% if it.sold_url %} · <a href="{{ it.sold_url }}" target="_blank">Verkaufte bei eBay ansehen</a>{% endif %}</p>
+        <label class="inline"><input type="checkbox" name="fremd_{{ i }}" {% if it.fremdfassung %}checked{% endif %}> PEGI/Import</label>
+        <label class="inline error"><input type="checkbox" name="weg_{{ i }}"> entfernen</label>
+      </div>
+    </details>
+    {% endfor %}
+    {% for j in range(3) %}{% set i = d['items']|length + j %}
+    <details class="lot-item new">
+      <summary><span class="li-main accent">＋ Artikel hinzufügen</span></summary>
+      <div class="edit-grid">
+        <label class="wide">Name <input type="text" name="name_{{ i }}"></label>
+        <label>Plattform <input type="text" name="plattform_{{ i }}"></label>
+        <label>Anzahl <input type="number" min="1" name="anzahl_{{ i }}" value="1"></label>
+        <label>Umfang <select name="umfang_{{ i }}">{% for u in UMFANG %}<option>{{ u }}</option>{% endfor %}</select></label>
+        <label>Zustand <select name="zustand_{{ i }}">{% for z in ZUSTAND %}<option {% if z == "Gebraucht" %}selected{% endif %}>{{ z }}</option>{% endfor %}</select></label>
+        <label>Art <select name="art_{{ i }}">{% for key, lbl in ART.items() %}<option value="{{ key }}">{{ lbl }}</option>{% endfor %}</select></label>
+        <label class="inline"><input type="checkbox" name="fremd_{{ i }}"> PEGI/Import</label>
+      </div>
+    </details>
+    {% endfor %}
+  </div>
+
+  <div class="card">
+    <h2>🧾 Kaufdaten</h2>
+    <div class="edit-grid">
+      <label>Quelle <select name="quelle">{% for q in QUELLEN %}<option {% if q == k.quelle %}selected{% endif %}>{{ q }}</option>{% endfor %}</select></label>
+      <label>Kaufdatum <input type="text" name="kaufdatum" value="{{ k.kaufdatum }}" placeholder="TT.MM.JJ"></label>
+      <label class="wide">Verkäufer <input type="text" name="verkaeufer" value="{{ k.verkaeufer }}" placeholder="Name bzw. eBay Privatverkäufer xy"></label>
+      <label class="wide">Adresse <input type="text" name="adresse" value="{{ k.adresse }}" placeholder="Straße, PLZ Ort – oder „nicht bekannt“"></label>
+      <label>Gesamtpreis € <span class="muted small">(inkl. Versand)</span><input type="text" inputmode="decimal" name="gesamt" value="{{ k.gesamt }}"></label>
+      <label>Zahlung <select name="zahlungsart">{% for z in ZAHLUNG %}<option {% if z == k.zahlungsart %}selected{% endif %}>{{ z }}</option>{% endfor %}</select></label>
+      <label class="wide">Verkäufer ist <select name="ust_herkunft">{% for u in UST %}<option {% if u == k.ust_herkunft %}selected{% endif %}>{{ u }}</option>{% endfor %}</select></label>
+      <label>Rechnung vorhanden <select name="rechnung">{% for r in ["Nein", "Ja"] %}<option {% if r == k.rechnung %}selected{% endif %}>{{ r }}</option>{% endfor %}</select></label>
+      <label>Aufteilung <select name="verteilung">{% for v in ["Nach Vergleichs-/Marktwert", "Gleichmäßig verteilt"] %}<option {% if v == k.verteilung %}selected{% endif %}>{{ v }}</option>{% endfor %}</select></label>
+      {% if k.quelle == "eBay" %}
+      <label>eBay-Verkäufer <input type="text" name="ebay_verkaeufer" value="{{ k.ebay_verkaeufer }}"></label>
+      <label>eBay-Artikelnr. <input type="text" name="ebay_artikelnr" value="{{ k.ebay_artikelnr }}"></label>
+      <label class="wide">eBay-Bestellnr. <span class="muted small">(optional, z. B. 22-15075-15851)</span><input type="text" name="ebay_bestellnr" value="{{ k.ebay_bestellnr }}"></label>
+      {% endif %}
+      <label class="wide">Grund Eigenbeleg <span class="muted small">(leer = Vorschlag)</span>
+        <textarea name="eigenbeleg" rows="2" placeholder="{{ eigenbeleg }}">{{ k.eigenbeleg }}</textarea></label>
+    </div>
+    {% if k.ust_herkunft == "Unternehmer mit normalem Umsatzsteuerausweis" %}<p class="small warn">Regelbesteuerter Einkauf: Gesamtpreis brutto eintragen, Rechnung aufbewahren.</p>{% endif %}
+  </div>
+
+  <div class="card">
+    <h2>⚖️ Aufteilung</h2>
+    <div class="margin-box">
+      <div class="mrow"><span>Summe Vergleichswerte</span><span>{{ eur(d.summe.werte) }}</span></div>
+      <div class="mrow"><span>Gesamtpreis (EK)</span><span>{{ eur(d.summe.gesamt) }}</span></div>
+      <div class="mrow total"><span>Anteil</span><span>{{ ("%.2f"|format(d.summe.anteil)|replace(".", ",") ~ " %") if d.summe.anteil else "–" }}</span></div>
+      {% if d.summe.geschaetzt %}<p class="small warn">{{ d.summe.geschaetzt }} Werte pauschal geschätzt (keine Vergleichsangebote) – bei Bedarf anpassen.</p>{% endif %}
+    </div>
+    <p class="small muted"><b>Schätzgrundlage im Beleg:</b> {{ grund }}</p>
+  </div>
+
+  <div class="sticky-actions">
+    {% if problems %}<p class="small error" style="margin:0 0 6px">Noch offen: {{ problems|join(", ") }}</p>{% endif %}
+    <button class="btn big" type="submit" onclick="document.getElementById('aktion').value='anlegen'">🧾 Ankaufbeleg anlegen ({{ d.summe.artikel }} Artikel, {{ eur(d.summe.gesamt) }})</button>
+    <div class="actions-row">
+      <button class="btn secondary small-btn" type="submit">Aktualisieren</button>
+      <button class="btn danger small-btn" type="submit" onclick="document.getElementById('aktion').value='verwerfen'">Verwerfen</button>
+    </div>
+  </div>
+</form>
+<script>
+  (() => {
+    const f = document.getElementById('f');
+    // Quelle oder Aufteilung geändert → gleich neu berechnen (eBay-Felder ein-/ausblenden)
+    f.querySelectorAll('select[name=quelle], select[name=verteilung], select[name=ust_herkunft]').forEach(el => el.addEventListener('change', () => f.requestSubmit()));
+    f.addEventListener('submit', () => f.querySelectorAll('button').forEach(b => setTimeout(() => b.disabled = true)));
+  })();
+</script>
+{% endif %}
+</div>
+{% endblock %}

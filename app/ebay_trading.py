@@ -301,3 +301,24 @@ def revise_listing(item_id: str, price: float | None = None, shipping_profile: s
                      f"{escape(shipping_profile)}</ShippingProfileID></SellerShippingProfile></SellerProfiles>")
     call("ReviseFixedPriceItem", f"<Item>{''.join(parts)}</Item>")
 
+
+def purchases(days: int = 60) -> list[dict]:
+    """Eigene eBay-Käufe (gewonnen/gekauft) der letzten Tage – für den Ankaufbeleg."""
+    root = call("GetMyeBayBuying", f"<WonList><Include>true</Include><DurationInDays>{min(days, 60)}</DurationInDays>"
+                                   "<Pagination><EntriesPerPage>200</EntriesPerPage></Pagination></WonList>")
+    out = []
+    for tr in root.findall(".//e:WonList//e:Transaction", NS):
+        it = tr.find("e:Item", NS)
+        if it is None:
+            continue
+        ship = _first_float(it, "e:ShippingDetails/e:ShippingServiceOptions/e:ShippingServiceCost") or 0.0
+        price = float(_t(tr, "e:TotalTransactionPrice") or _t(it, "e:SellingStatus/e:CurrentPrice") or 0)
+        total = float(_t(tr, "e:TotalPrice") or 0) or round(price + ship, 2)
+        out.append({
+            "item_id": _t(it, "e:ItemID"), "title": _t(it, "e:Title"), "seller": _t(it, "e:Seller/e:UserID"),
+            "date": (_t(tr, "e:PaidTime") or _t(tr, "e:CreatedDate") or "")[:10], "price": price, "shipping": ship,
+            "total": total, "order_line": _t(tr, "e:OrderLineItemID"),
+            "image": _t(it, "e:PictureDetails/e:GalleryURL"),
+        })
+    return sorted(out, key=lambda p: p["date"], reverse=True)
+

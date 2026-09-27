@@ -1,0 +1,110 @@
+{% extends "base.html" %}
+{% block title %}Ankauf · eBay Manager{% endblock %}
+{% set labels = {"erkennen": "wird erkannt", "bewerten": "Marktwerte …", "pruefen": "bitte prüfen", "anlegen": "wird angelegt",
+                 "angelegt": "in der WaWi", "fehler": "Fehler"} %}
+{% block content %}
+<div class="narrow handy">
+{% if info %}<p class="banner ok">{{ info }}</p>{% endif %}
+{% if fehler %}<p class="banner error">{{ fehler }}</p>{% endif %}
+
+<h1>🧾 Ankauf erfassen</h1>
+<form id="neu" class="card handy-form">
+  <div class="shots" id="shots">
+    <label class="shot-add">
+      <input type="file" accept="image/*" capture="environment" id="cam" hidden>
+      <span>📷</span>Foto aufnehmen
+    </label>
+    <label class="shot-add secondary">
+      <input type="file" accept="image/*" multiple id="gal" hidden>
+      <span>🖼️</span>Aus Galerie
+    </label>
+  </div>
+  <p class="muted small">Konvolut ausbreiten, sodass die Titel lesbar sind – bei vielen Spielen mehrere Fotos (Rücken, Stapel), bis zu 20. Überschneidungen sind kein Problem. Antippen entfernt ein Foto.</p>
+
+  {% if purchases %}
+  <label>Gehört zu diesem eBay-Kauf <span class="muted small">(noch nicht in der WaWi)</span>
+    <select name="ebay" id="ebay">
+      <option value="">– kein eBay-Kauf / anderer Kauf –</option>
+      {% for p in purchases %}
+        <option value="{{ p.item_id }}">{{ p.date[8:10] }}.{{ p.date[5:7] }}. · {{ p.title[:48] }} · {{ "%.2f"|format(p.total)|replace(".", ",") }} € · {{ p.seller }}</option>
+      {% endfor %}
+    </select>
+  </label>
+  {% endif %}
+  <label>Hinweis für Claude <span class="muted small">(optional)</span>
+    <textarea id="hinweis" rows="2" placeholder="z. B. 50 Spiele, Foto 3 zeigt nur lose Discs"></textarea>
+  </label>
+
+  <button class="btn big" id="go" type="submit" disabled>🔎 Konvolut erkennen</button>
+  <p class="muted small" id="progress" hidden></p>
+</form>
+
+{% if items %}
+<h2 class="handy-h2">Zuletzt</h2>
+<div class="handy-list">
+  {% for a in items %}
+  <a class="card handy-row" href="/ankauf/{{ a.id }}">
+    <img src="/ankauf/{{ a.id }}/foto/1.jpg" alt="" loading="lazy">
+    <div>
+      <span class="status hs-{{ 'online' if a.status == 'angelegt' else ('bereit' if a.status == 'pruefen' else a.status) }}">{{ labels.get(a.status, a.status) }}</span>
+      <p class="t">{% if a.belegnr %}{{ a.belegnr }} · {% endif %}{{ (a.data.summe.artikel ~ " Artikel") if a.data.summe else "Konvolut" }}{% if a.data.kauf and a.data.kauf.verkaeufer %} · {{ a.data.kauf.verkaeufer }}{% endif %}</p>
+      <p class="muted small">{% if a.data.summe and a.data.summe.gesamt %}{{ "%.2f"|format(a.data.summe.gesamt)|replace(".", ",") }} € · {% endif %}{{ a.created_at[:16]|replace("T", " ") }}</p>
+    </div>
+  </a>
+  {% endfor %}
+</div>
+{% endif %}
+</div>
+
+<script>
+(() => {
+  const shots = document.getElementById('shots');
+  const go = document.getElementById('go');
+  const progress = document.getElementById('progress');
+  const photos = [];
+
+  async function shrink(file) {
+    try {
+      const bmp = await createImageBitmap(file, { imageOrientation: 'from-image' });
+      const scale = Math.min(1, 2000 / Math.max(bmp.width, bmp.height));
+      const c = document.createElement('canvas');
+      c.width = Math.round(bmp.width * scale); c.height = Math.round(bmp.height * scale);
+      c.getContext('2d').drawImage(bmp, 0, 0, c.width, c.height);
+      return await new Promise(res => c.toBlob(res, 'image/jpeg', 0.88));
+    } catch (e) { return file; }
+  }
+  function render() {
+    shots.querySelectorAll('.shot').forEach(e => e.remove());
+    photos.forEach((blob, i) => {
+      const d = document.createElement('button');
+      d.type = 'button'; d.className = 'shot'; d.title = 'Entfernen';
+      d.innerHTML = `<img src="${URL.createObjectURL(blob)}" alt=""><span>${i + 1}</span>`;
+      d.onclick = () => { photos.splice(i, 1); render(); };
+      shots.insertBefore(d, shots.querySelector('.shot-add'));
+    });
+    go.disabled = photos.length === 0;
+  }
+  async function add(input) {
+    for (const f of input.files) { if (photos.length < 20) photos.push(await shrink(f)); }
+    input.value = ''; render();
+  }
+  document.getElementById('cam').onchange = e => add(e.target);
+  document.getElementById('gal').onchange = e => add(e.target);
+
+  document.getElementById('neu').onsubmit = async ev => {
+    ev.preventDefault();
+    go.disabled = true; progress.hidden = false; progress.textContent = 'Fotos werden hochgeladen …';
+    const fd = new FormData();
+    photos.forEach((b, i) => fd.append('fotos', b, `foto${i + 1}.jpg`));
+    fd.append('hinweis', document.getElementById('hinweis').value);
+    const eb = document.getElementById('ebay'); if (eb) fd.append('ebay', eb.value);
+    try {
+      const r = await fetch('/ankauf', { method: 'POST', body: fd });
+      const j = await r.json();
+      if (!j.ok) throw new Error(j.error || 'Fehler');
+      location.href = j.url;
+    } catch (e) { progress.textContent = '❌ ' + e.message; go.disabled = false; }
+  };
+})();
+</script>
+{% endblock %}

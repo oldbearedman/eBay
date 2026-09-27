@@ -211,10 +211,10 @@ CONDITION_SCHEMA = {
 }
 
 
-def _images(photos: list[bytes]) -> list[dict]:
+def _images(photos: list[bytes], limit: int = 8) -> list[dict]:
     import base64
     return [{"type": "image", "source": {"type": "base64", "media_type": "image/jpeg",
-                                         "data": base64.b64encode(data).decode()}} for data in photos[:8]]
+                                         "data": base64.b64encode(data).decode()}} for data in photos[:limit]]
 
 
 def log_usage(task: str, response) -> None:
@@ -277,6 +277,64 @@ def assess_condition(photos: list[bytes], note: str, facts: dict, model: str | N
         {"type": "text", "text": f"Zustandsnotiz des Händlers: {note.strip() or '(keine)'}"},
     ]
     return _ask(CONDITION_SYSTEM, content, CONDITION_SCHEMA, "medium", 8000, task="zustand", model=model)
+
+
+# ── Ankauf: ganzes Konvolut auf Fotos erkennen ─────────────────────────
+
+LOT_SYSTEM = """Du erfasst für einen gewerblichen Händler (gebrauchte Videospiele, Konsolen, Zubehör) einen Ankauf:
+Auf den Fotos ist ein KONVOLUT zu sehen. Liste JEDES physische Exemplar auf – das wird die Warenwirtschaft.
+
+- Fotos können sich überschneiden (Übersicht + Nahaufnahmen, Vorder- und Rückseiten): dasselbe Exemplar nur
+  EINMAL zählen. Mehrere gleiche Exemplare desselben Spiels → eine Zeile mit anzahl > 1.
+- name: offizieller Titel (deutsche Fassung, falls erkennbar), ohne Plattform. Nicht lesbar → trotzdem aufführen,
+  z. B. „unbekanntes PS2-Spiel (Foto 3, rechts unten)“.
+- plattform: Kurzform (PS1, PS2, PS3, PS4, PS5, PSP, PS Vita, Xbox, Xbox 360, Xbox One, Xbox Series X, Switch,
+  Wii, Wii U, DS, 3DS, GameCube, N64, SNES, NES, Game Boy, GBA, Mega Drive, Dreamcast, PC, …) oder "".
+- umfang: komplett (Hülle, Anleitung, Disc/Modul) | ohne Anleitung | nur Disc/Modul | Hülle ohne Disc |
+  versiegelt | Gerät | Sonstiges. Was nicht zu sehen ist, nicht erfinden – im Zweifel „ohne Anleitung“ und in
+  unsicherheiten vermerken.
+- zustand: nur nach Sichtbarem; im Zweifel „Gebraucht“.
+- fremdfassung = true bei PEGI-/ESRB-Cover, NTSC oder Import (keine deutsche USK-Fassung).
+- hinweis: kurz, nur wenn wichtig (z. B. „Hülle gebrochen“, „Platinum“, „Promo“).
+- unsicherheiten: was der Händler prüfen sollte (z. B. „Foto 2 unscharf – 3 Titel geraten“)."""
+
+LOT_SCHEMA = {
+    "type": "object",
+    "properties": {
+        "artikel": {
+            "type": "array",
+            "items": {
+                "type": "object",
+                "properties": {
+                    "name": {"type": "string"},
+                    "plattform": {"type": "string"},
+                    "art": {"type": "string", "enum": ["videospiel", "konsole", "zubehoer", "film_musik", "buch", "sonstiges"]},
+                    "umfang": {"type": "string", "enum": ["komplett", "ohne Anleitung", "nur Disc/Modul", "Hülle ohne Disc",
+                                                          "versiegelt", "Gerät", "Sonstiges"]},
+                    "zustand": {"type": "string", "enum": ["Neu", "Gebraucht - Hervorragend", "Gebraucht - Gut",
+                                                           "Gebraucht - Akzeptabel", "Gebraucht", "Defekt / Ersatzteile"]},
+                    "anzahl": {"type": "integer"},
+                    "fremdfassung": {"type": "boolean"},
+                    "hinweis": {"type": "string"},
+                },
+                "required": ["name", "plattform", "art", "umfang", "zustand", "anzahl", "fremdfassung", "hinweis"],
+                "additionalProperties": False,
+            },
+        },
+        "unsicherheiten": {"type": "array", "items": {"type": "string"}},
+    },
+    "required": ["artikel", "unsicherheiten"],
+    "additionalProperties": False,
+}
+
+
+def identify_lot(photos: list[bytes], hint: str = "") -> dict:
+    """Alle Artikel eines Konvoluts von den Fotos → {artikel: [...], unsicherheiten: [...]}"""
+    content = []
+    for n, img in enumerate(_images(photos, 20), 1):
+        content += [{"type": "text", "text": f"Foto {n}:"}, img]
+    content.append({"type": "text", "text": f"Hinweis des Händlers: {hint.strip() or '(keiner)'}\n\nBitte alle Artikel auflisten."})
+    return _ask(LOT_SYSTEM, content, LOT_SCHEMA, "high", 32000, task="ankauf")
 
 
 SINGLE_SYSTEM = """Du schreibst ein eBay.de-Angebot für einen gewerblichen Verkäufer (ein einzelner Artikel).

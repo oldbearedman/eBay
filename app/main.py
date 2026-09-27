@@ -11,7 +11,7 @@ from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, Redirect
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 
-from . import advisor, ai, bundles, handy, meta, review, config, db, ebay_account, ebay_auth, ebay_orders, ebay_trading, market, promotions, settings, sync, traffic, wawi
+from . import advisor, ai, ankauf, bundles, handy, meta, review, config, db, ebay_account, ebay_auth, ebay_orders, ebay_trading, market, promotions, settings, sync, traffic, wawi
 
 log = logging.getLogger("ebay-manager")
 templates = Jinja2Templates(directory=config.BASE_DIR / "app" / "templates")
@@ -50,6 +50,7 @@ async def lifespan(app: FastAPI):
     meta.init()
     review.init()
     handy.init()
+    ankauf.init()
     task = asyncio.create_task(_auto_sync())
     yield
     task.cancel()
@@ -597,4 +598,92 @@ async def handy_action(request: Request, hid: int):
         return _back(url, info="Aktualisiert.")
     except Exception as exc:
         log.exception("Handy-Aktion %s fehlgeschlagen", action)
+        return _back(url, fehler=str(exc))
+
+
+# ── Ankauf: Konvolut fotografieren → Ankaufbeleg in der WaWi ────────────
+
+@app.get("/ankauf", response_class=HTMLResponse)
+def ankauf_start(request: Request, info: str = "", fehler: str = ""):
+    return templates.TemplateResponse(request, "ankauf.html", {
+        "items": ankauf.recent(), "purchases": ankauf.open_purchases(), "info": info, "fehler": fehler,
+    })
+
+
+@app.post("/ankauf")
+async def ankauf_create(request: Request):
+    form = await request.form()
+    files = [await f.read() for f in form.getlist("fotos") if hasattr(f, "read")]
+    try:
+        aid = await asyncio.to_thread(ankauf.create, files, str(form.get("hinweis") or ""), str(form.get("ebay") or ""))
+    except Exception as exc:
+        log.exception("Ankauf-Upload fehlgeschlagen")
+        return JSONResponse({"ok": False, "error": str(exc)}, status_code=400)
+    return JSONResponse({"ok": True, "url": f"/ankauf/{aid}"})
+
+
+@app.get("/ankauf/{aid}", response_class=HTMLResponse)
+def ankauf_item(request: Request, aid: int, info: str = "", fehler: str = ""):
+    a = ankauf.get(aid)
+    if not a:
+        raise HTTPException(404)
+    d = a["data"]
+    return templates.TemplateResponse(request, "ankauf_item.html", {
+        "a": a, "d": d, "k": d.get("kauf", {}), "info": info, "fehler": fehler,
+        "problems": ankauf.check(d) if a["status"] == "pruefen" and d.get("summe") else [],
+        "eigenbeleg": ankauf.eigenbeleg_text(d["kauf"]) if d.get("kauf") else "",
+        "grund": ankauf.schaetzgrundlage(d) if d.get("summe") else "",
+        "UMFANG": ankauf.UMFANG, "ZUSTAND": ankauf.ZUSTAND, "ART": ankauf.ART, "QUELLEN": ankauf.QUELLEN,
+        "ZAHLUNG": ankauf.ZAHLUNG, "UST": ankauf.UST_HERKUNFT,
+    })
+
+
+@app.get("/ankauf/{aid}/status")
+def ankauf_status(aid: int):
+    a = ankauf.get(aid)
+    if not a:
+        raise HTTPException(404)
+    return {"status": a["status"], "step": a["step"]}
+
+
+@app.get("/ankauf/{aid}/foto/{n}.jpg")
+def ankauf_photo(aid: int, n: int):
+    path = ankauf.photo_path(aid, n)
+    if not path.exists():
+        raise HTTPException(404)
+    return FileResponse(path, media_type="image/jpeg")
+
+
+@app.get("/ankauf/{aid}/beleg.pdf")
+async def ankauf_pdf(aid: int):
+    from fastapi.responses import Response
+    a = ankauf.get(aid)
+    if not a or not a["belegnr"]:
+        raise HTTPException(404)
+    pdf = await asyncio.to_thread(ankauf.receipt_pdf, a["belegnr"])
+    return Response(pdf, media_type="application/pdf",
+                    headers={"Content-Disposition": f'inline; filename="{a["belegnr"]}.pdf"'})
+
+
+@app.post("/ankauf/{aid}")
+async def ankauf_action(request: Request, aid: int):
+    form = await request.form()
+    action = form.get("aktion")
+    url = f"/ankauf/{aid}"
+    try:
+        if action == "verwerfen":
+            ankauf.discard(aid)
+            return _back("/ankauf", info="Verworfen.")
+        if action == "neu":
+            ankauf.start(aid)
+            return RedirectResponse(url, status_code=303)
+        if await asyncio.to_thread(ankauf.update, aid, dict(form)):
+            ankauf.revalue(aid)
+            return RedirectResponse(url, status_code=303)
+        if action == "anlegen":
+            res = await asyncio.to_thread(ankauf.create_receipt, aid)
+            return _back(url, info=f"Ankaufbeleg {res['belegnr']} mit {len(res['rows'])} Artikeln in der WaWi angelegt.")
+        return _back(url, info="Aktualisiert.")
+    except Exception as exc:
+        log.exception("Ankauf-Aktion %s fehlgeschlagen", action)
         return _back(url, fehler=str(exc))

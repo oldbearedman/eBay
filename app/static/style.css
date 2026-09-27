@@ -437,3 +437,15 @@ h3.form-section { font-size: 15px; margin: 8px 0 10px; padding-top: 10px; border
 .ident-tags .usk18 { background: var(--error-soft); color: var(--error); }
 .edit-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 0 10px; margin-top: 10px; }
 .edit-grid .wide { grid-column: 1 / -1; }
+
+/* ── Ankauf ─────────────────────────────────────────────────────── */
+.lot-item { border: 1.5px solid var(--border); border-radius: var(--radius-sm); margin: 0 0 8px !important; background: var(--surface); }
+.lot-item > summary { display: flex; gap: 10px; align-items: center; padding: 10px 12px; list-style: none; color: var(--text); font-weight: 600; }
+.lot-item > summary::-webkit-details-marker { display: none; }
+.lot-item[open] > summary { border-bottom: 1px solid var(--border); }
+.lot-item .edit-grid { padding: 4px 12px 0; }
+.lot-item.est { border-color: var(--warn); }
+.lot-item.new { border-style: dashed; }
+.li-main { flex: 1; min-width: 0; font-size: 14px; }
+.li-side { text-align: right; font-size: 13px; white-space: nowrap; }
+.accent { color: var(--accent); }

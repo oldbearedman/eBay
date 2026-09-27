@@ -541,3 +541,31 @@ def set_listed(produktnr: str, lager_reihe: str | None = None) -> None:
     after = _row_ids([produktnr])[produktnr][1]
     if after.get("status") != "Inseriert":
         raise RuntimeError(f"WaWi-Status von {produktnr} ist danach „{after.get('status')}“.")
+
+
+# ── Ankauf anlegen – über die WaWi-Schnittstelle (ein Beleg, eine Belegnummer) ──
+
+def known_ebay_items() -> set[str]:
+    """eBay-Artikelnummern von Ankäufen, die schon in der WaWi stehen."""
+    return {(r.get("ebay_artikelnr") or "").strip() for r in _rows() if (r.get("ebay_artikelnr") or "").strip()}
+
+
+def fmt_money(v: float) -> str:
+    return f"{v:,.2f}".replace(",", "X").replace(".", ",").replace("X", ".") + "€"
+
+
+def create_receipt(rows: list[dict]) -> dict:
+    """Legt alle Zeilen als EINEN Ankaufbeleg an (WaWi vergibt Beleg- und Produktnummern) und prüft das Ergebnis."""
+    import httpx
+    r = httpx.post(f"{WAWI_URL}/api/rows/create-many", json={"rows": rows}, timeout=120)
+    data = r.json() if r.headers.get("content-type", "").startswith("application/json") else {}
+    if not data.get("ok"):
+        raise RuntimeError(f"WaWi hat den Ankauf abgelehnt: {data.get('error') or r.text[:300]}")
+    saved = data["rows"]
+    belegnr = saved[0]["belegnr"]
+    check = [x for x in _rows() if x.get("belegnr") == belegnr]
+    if len(check) != len(rows):
+        raise RuntimeError(f"Beleg {belegnr}: {len(check)} statt {len(rows)} Artikel in der WaWi – bitte prüfen.")
+    return {"belegnr": belegnr, "rows": [{"produktnr": x["produktnr"], "artikel": x["artikel"], "ek": x["ek"],
+                                          "min_vk": x.get("min_vk", "")} for x in saved]}
+
